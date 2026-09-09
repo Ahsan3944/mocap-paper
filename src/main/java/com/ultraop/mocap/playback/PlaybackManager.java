@@ -12,23 +12,53 @@ import java.util.*;
 
 /** Owns standalone and scene playback timelines and advances them at the configured playback speed. */
 public final class PlaybackManager {
-    private final JavaPlugin plugin; private final RecordingManager recordingManager;
-    private final Map<UUID,PlaybackSession> active=new LinkedHashMap<>(), activeScenes=new LinkedHashMap<>(); private final Map<UUID,PlaybackModifiers> modifiers=new LinkedHashMap<>(); private final Map<UUID,Double> accumulators=new HashMap<>();
-    private SceneManager sceneManager; private BukkitTask ticker; private double playbackSpeed=1.0; private boolean blockActionsPlayback=true,blockInitialization=true,invulnerablePlayback=true,playEntities=true,preventTrackingPlayedEntities=true;
+    private final JavaPlugin plugin;
+    private final RecordingManager recordingManager;
+    private final Map<UUID,PlaybackSession> active=new LinkedHashMap<>();
+    private final Map<UUID,ScenePlayback> activeScenes=new LinkedHashMap<>();
+    private final Map<UUID,PlaybackModifiers> modifiers=new LinkedHashMap<>();
+    private final Map<UUID,Double> accumulators=new HashMap<>();
+    private SceneManager sceneManager;
+    private BukkitTask ticker;
+    private double playbackSpeed=1.0;
+    private boolean blockActionsPlayback=true,blockInitialization=true,invulnerablePlayback=true,playEntities=true,preventTrackingPlayedEntities=true;
     public PlaybackManager(JavaPlugin plugin,RecordingManager recordingManager){this.plugin=plugin;this.recordingManager=recordingManager;loadSettings();}
     public void setSceneManager(SceneManager sceneManager){this.sceneManager=sceneManager;}
-    private void loadSettings(){playbackSpeed=Math.max(0.0,plugin.getConfig().getDouble("settings.playback_speed",1.0));blockActionsPlayback=plugin.getConfig().getBoolean("settings.block_actions_playback",plugin.getConfig().getBoolean("playback.block_actions_playback",true));blockInitialization=plugin.getConfig().getBoolean("settings.block_initialization",plugin.getConfig().getBoolean("playback.block_initialization",true));invulnerablePlayback=plugin.getConfig().getBoolean("settings.invulnerable_playback",true);String play=plugin.getConfig().getString("settings.play_entities","*");playEntities=play!=null&&!play.equalsIgnoreCase("@none")&&!play.equalsIgnoreCase("none");preventTrackingPlayedEntities=plugin.getConfig().getBoolean("settings.prevent_tracking_played_entities",true);}
-    public boolean isBlockActionsPlayback(){return blockActionsPlayback;} public boolean isBlockInitialization(){return blockInitialization;} public boolean isInvulnerablePlayback(){return invulnerablePlayback;} public boolean isPlayEntities(){return playEntities;} public boolean isPreventTrackingPlayedEntities(){return preventTrackingPlayedEntities;}
-    public void setBlockActionsPlayback(boolean v){blockActionsPlayback=v;plugin.getConfig().set("settings.block_actions_playback",v);plugin.saveConfig();} public void setBlockInitialization(boolean v){blockInitialization=v;plugin.getConfig().set("settings.block_initialization",v);plugin.saveConfig();}
+    private void loadSettings(){
+        playbackSpeed=Math.max(0.0,plugin.getConfig().getDouble("settings.playback_speed",1.0));
+        blockActionsPlayback=plugin.getConfig().getBoolean("settings.block_actions_playback",plugin.getConfig().getBoolean("playback.block_actions_playback",true));
+        blockInitialization=plugin.getConfig().getBoolean("settings.block_initialization",plugin.getConfig().getBoolean("playback.block_initialization",true));
+        invulnerablePlayback=plugin.getConfig().getBoolean("settings.invulnerable_playback",true);
+        String play=plugin.getConfig().getString("settings.play_entities","*");
+        playEntities=play!=null&&!play.equalsIgnoreCase("@none")&&!play.equalsIgnoreCase("none");
+        preventTrackingPlayedEntities=plugin.getConfig().getBoolean("settings.prevent_tracking_played_entities",true);
+    }
+    public boolean isBlockActionsPlayback(){return blockActionsPlayback;}
+    public boolean isBlockInitialization(){return blockInitialization;}
+    public boolean isInvulnerablePlayback(){return invulnerablePlayback;}
+    public boolean isPlayEntities(){return playEntities;}
+    public boolean isPreventTrackingPlayedEntities(){return preventTrackingPlayedEntities;}
+    public void setBlockActionsPlayback(boolean v){blockActionsPlayback=v;plugin.getConfig().set("settings.block_actions_playback",v);plugin.saveConfig();}
+    public void setBlockInitialization(boolean v){blockInitialization=v;plugin.getConfig().set("settings.block_initialization",v);plugin.saveConfig();}
     public void start(){if(ticker==null)ticker=Bukkit.getScheduler().runTaskTimer(plugin,this::tick,1L,1L);}
-    public PlaybackSession play(UUID recordingId,Player viewer){RecordingSession r=recordingManager.get(recordingId);return r==null?null:play(r,viewer);} public PlaybackSession playSaved(String name,Player viewer){RecordingSession r=recordingManager.getSaved(name);return r==null?null:play(r,viewer);} public PlaybackSession play(RecordingSession r,Player v){return play(r,v,getModifiers(v));}
+    public PlaybackSession play(UUID recordingId,Player viewer){RecordingSession r=recordingManager.get(recordingId);return r==null?null:play(r,viewer);}
+    public PlaybackSession playSaved(String name,Player viewer){RecordingSession r=recordingManager.getSaved(name);return r==null?null:play(r,viewer);}
+    public PlaybackSession play(RecordingSession r,Player v){return play(r,v,getModifiers(v));}
     public PlaybackSession play(RecordingSession r,Player v,PlaybackModifiers m){PlaybackSession s=create(r,v,m,null,true);if(s==null)return null;active.put(s.getId(),s);accumulators.put(s.getId(),0.0);return s;}
-    public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);} public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t,boolean root){PlaybackSession s=new PlaybackSession(r,v,m,t,root,blockActionsPlayback,blockInitialization,playEntities,invulnerablePlayback,preventTrackingPlayedEntities);return s.isStopped()?null:s;} public PlaybackSession createSubscene(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);}
+    public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);}
+    public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t,boolean root){PlaybackSession s=new PlaybackSession(r,v,m,t,root,blockActionsPlayback,blockInitialization,playEntities,invulnerablePlayback,preventTrackingPlayedEntities);return s.isStopped()?null:s;}
+    public PlaybackSession createSubscene(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);}
     public ScenePlayback playScene(String n,Player v,PlaybackModifiers m){if(sceneManager==null)return null;ScenePlayback s=ScenePlayback.start(sceneManager,this,n,v,m);if(s==null)return null;activeScenes.put(s.getId(),s);return s;}
-    public PlaybackSession stop(UUID id){PlaybackSession s=active.remove(id);accumulators.remove(id);if(s!=null)s.stop();return s;} public ScenePlayback stopScene(UUID id){ScenePlayback s=activeScenes.remove(id);if(s!=null)s.stop();return s;}
+    public PlaybackSession stop(UUID id){PlaybackSession s=active.remove(id);accumulators.remove(id);if(s!=null)s.stop();return s;}
+    public ScenePlayback stopScene(UUID id){ScenePlayback s=activeScenes.remove(id);if(s!=null)s.stop();return s;}
     public int stopAll(Player owner){int n=0;for(PlaybackSession s:new ArrayList<>(active.values()))if(owner==null||owner.getUniqueId().equals(s.getViewerPlayerId())){s.stop();active.remove(s.getId());accumulators.remove(s.getId());n++;}for(ScenePlayback s:new ArrayList<>(activeScenes.values())){s.stop();activeScenes.remove(s.getId());n++;}return n;}
-    public PlaybackSession get(UUID id){return active.get(id);} public ScenePlayback getScene(UUID id){return activeScenes.get(id);} public PlaybackModifiers getModifiers(Player p){return modifiers.getOrDefault(p.getUniqueId(),PlaybackModifiers.DEFAULT);} public void setModifiers(Player p,PlaybackModifiers v){modifiers.put(p.getUniqueId(),v);} public void resetModifiers(Player p){modifiers.remove(p.getUniqueId());}
-    public Collection<PlaybackSession> getActive(){return Collections.unmodifiableList(new ArrayList<>(active.values()));} public Collection<ScenePlayback> getActiveScenes(){return Collections.unmodifiableList(new ArrayList<>(activeScenes.values()));}
+    public PlaybackSession get(UUID id){return active.get(id);}
+    public ScenePlayback getScene(UUID id){return activeScenes.get(id);}
+    public PlaybackModifiers getModifiers(Player p){return modifiers.getOrDefault(p.getUniqueId(),PlaybackModifiers.DEFAULT);}
+    public void setModifiers(Player p,PlaybackModifiers v){modifiers.put(p.getUniqueId(),v);}
+    public void resetModifiers(Player p){modifiers.remove(p.getUniqueId());}
+    public Collection<PlaybackSession> getActive(){return Collections.unmodifiableList(new ArrayList<>(active.values()));}
+    public Collection<ScenePlayback> getActiveScenes(){return Collections.unmodifiableList(new ArrayList<>(activeScenes.values()));}
     public void shutdown(){if(ticker!=null){ticker.cancel();ticker=null;}active.values().forEach(PlaybackSession::stop);activeScenes.values().forEach(ScenePlayback::stop);active.clear();activeScenes.clear();modifiers.clear();accumulators.clear();}
     private void tick(){for(PlaybackSession s:new ArrayList<>(active.values())){UUID id=s.getId();double acc=accumulators.getOrDefault(id,0.0)+playbackSpeed;int steps=(int)Math.floor(acc);acc-=steps;accumulators.put(id,acc);for(int i=0;i<steps&&!s.isStopped();i++)s.advance();if(s.isStopped()){active.remove(id);accumulators.remove(id);}}for(ScenePlayback s:new ArrayList<>(activeScenes.values())){s.tick();if(s.isStopped())activeScenes.remove(s.getId());}}
 }

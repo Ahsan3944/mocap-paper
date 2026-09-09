@@ -25,7 +25,10 @@ public final class RecordingSession {
     public Map<UUID,List<EntityStateFrame>> getEntityFrames(){Map<UUID,List<EntityStateFrame>> c=new LinkedHashMap<>();entityFrames.forEach((u,v)->c.put(u,Collections.unmodifiableList(v)));return Collections.unmodifiableMap(c);} public List<BlockActionFrame> getBlockActions(){return Collections.unmodifiableList(blockActions);}
     public String getInstantSaveName(){return instantSaveName;} public void setInstantSaveName(String n){instantSaveName=n;} public OnDeath getOnDeath(){return onDeath;} public void setOnDeath(OnDeath v){onDeath=v==null?OnDeath.END_RECORDING:v;}
     public OnChangeDimension getOnChangeDimension(){return onChangeDimension;} public void setOnChangeDimension(OnChangeDimension v){onChangeDimension=v==null?OnChangeDimension.END_RECORDING:v;}
-    void markSwingMainHand(Player p){if(activeFor(p))swingMainHand.add(p.getUniqueId());} void markSwingOffHand(Player p){if(activeFor(p))swingOffHand.add(p.getUniqueId());} void markHurt(Entity e){if(activeFor(e))hurt.add(e.getUniqueId());} private boolean activeFor(Entity e){return sourcePlayerId.equals(e.getUniqueId());}
+    void markSwingMainHand(Player p){if(activeFor(p))swingMainHand.add(p.getUniqueId());} void markSwingOffHand(Player p){if(activeFor(p))swingOffHand.add(p.getUniqueId());}
+    /** Mirrors the upstream tracker: hurt events are recorded for the player or for entities currently tracked by this session. */
+    void markHurt(Entity e){if(activeFor(e))hurt.add(e.getUniqueId());}
+    private boolean activeFor(Entity e){return sourcePlayerId.equals(e.getUniqueId())||trackedLastSeenTick.containsKey(e.getUniqueId());}
     boolean capture(Player p){
         if(stoppedAt!=null)return false;
         String currentWorld=worldKey(p);

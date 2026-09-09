@@ -1,5 +1,7 @@
 package com.ultraop.mocap.command;
 
+import com.ultraop.mocap.playback.PlaybackManager;
+import com.ultraop.mocap.playback.PlaybackSession;
 import com.ultraop.mocap.recording.RecordingManager;
 import com.ultraop.mocap.recording.RecordingSession;
 import org.bukkit.Bukkit;
@@ -24,10 +26,12 @@ import java.util.UUID;
 public final class MoCapCommand implements CommandExecutor, TabCompleter {
     private final JavaPlugin plugin;
     private final RecordingManager recordingManager;
+    private final PlaybackManager playbackManager;
 
-    public MoCapCommand(JavaPlugin plugin, RecordingManager recordingManager) {
+    public MoCapCommand(JavaPlugin plugin, RecordingManager recordingManager, PlaybackManager playbackManager) {
         this.plugin = plugin;
         this.recordingManager = recordingManager;
+        this.playbackManager = playbackManager;
     }
 
     @Override
@@ -45,15 +49,122 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "recording" -> handleRecording(sender, args);
             case "recordings" -> handleRecordings(sender, args);
+            case "playback" -> handlePlayback(sender, args);
             case "info" -> {
                 sender.sendMessage(ChatColor.GRAY + "MoCap Paper 0.1.0-SNAPSHOT");
                 sender.sendMessage(ChatColor.GRAY + "Paper 1.21.11 feature-parity implementation.");
             }
-            case "playback", "scenes", "settings", "misc" ->
+            case "scenes", "settings", "misc" ->
                     sender.sendMessage(ChatColor.RED + "That MoCap command is not implemented yet.");
             default -> sendHelp(sender);
         }
         return true;
+    }
+
+    private void handlePlayback(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback <start|stop|stop_all|list>");
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "start" -> startPlayback(sender, args);
+            case "stop" -> stopPlayback(sender, args);
+            case "stop_all" -> stopAllPlayback(sender, args);
+            case "list" -> listPlayback(sender);
+            default -> sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback <start|stop|stop_all|list>");
+        }
+    }
+
+    private void startPlayback(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback start <name> [player|selector]");
+            return;
+        }
+        RecordingSession recording = recordingManager.getSaved(args[2]);
+        if (recording == null) {
+            sender.sendMessage(ChatColor.RED + "Recording not found: " + args[2]);
+            return;
+        }
+
+        List<Player> viewers = resolvePlaybackPlayers(sender, args.length >= 4 ? args[3] : null);
+        if (viewers.isEmpty()) return;
+
+        int started = 0;
+        for (Player viewer : viewers) {
+            PlaybackSession session = playbackManager.play(recording, viewer);
+            if (session != null) {
+                sender.sendMessage(ChatColor.GREEN + "Playback started: " + session.getId()
+                        + " (" + args[2] + ")");
+                started++;
+            }
+        }
+        if (started == 0) sender.sendMessage(ChatColor.RED + "Playback could not be started.");
+    }
+
+    private List<Player> resolvePlaybackPlayers(CommandSender sender, String selector) {
+        if (selector == null) {
+            if (sender instanceof Player player) return List.of(player);
+            sender.sendMessage(ChatColor.RED + "Specify a player when executing this command from console.");
+            return List.of();
+        }
+        try {
+            List<Player> players = new ArrayList<>();
+            for (Entity entity : Bukkit.selectEntities(sender, selector)) {
+                if (entity instanceof Player player) players.add(player);
+            }
+            if (players.isEmpty()) sender.sendMessage(ChatColor.RED + "No players matched the playback target.");
+            return players;
+        } catch (IllegalArgumentException e) {
+            sender.sendMessage(ChatColor.RED + "Invalid or unresolved player selector: " + selector);
+            return List.of();
+        }
+    }
+
+    private void stopPlayback(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback stop <id>");
+            return;
+        }
+        UUID id = parseId(sender, args[2]);
+        if (id == null) return;
+        PlaybackSession session = playbackManager.stop(id);
+        sender.sendMessage(session == null
+                ? ChatColor.RED + "Playback not found: " + args[2]
+                : ChatColor.GREEN + "Playback stopped: " + args[2]);
+    }
+
+    private void stopAllPlayback(CommandSender sender, String[] args) {
+        boolean includingOthers = args.length >= 3 && args[2].equalsIgnoreCase("including_others");
+        if (includingOthers && !(sender instanceof Player)) {
+            sender.sendMessage(ChatColor.GREEN + "Stopped " + playbackManager.stopAll(null) + " playback(s).");
+            return;
+        }
+        if (includingOthers) {
+            sender.sendMessage(ChatColor.GREEN + "Stopped " + playbackManager.stopAll(null) + " playback(s).");
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(ChatColor.RED + "Specify 'including_others' when executing this from console.");
+            return;
+        }
+        sender.sendMessage(ChatColor.GREEN + "Stopped " + playbackManager.stopAll(player) + " playback(s).");
+    }
+
+    private void listPlayback(CommandSender sender) {
+        CollectionSnapshot snapshot = new CollectionSnapshot(playbackManager.getActive());
+        sender.sendMessage(ChatColor.GOLD + "Active playbacks: " + snapshot.sessions.size());
+        for (PlaybackSession session : snapshot.sessions) {
+            sender.sendMessage(ChatColor.GRAY + "  " + session.getId()
+                    + " | " + session.getRecording().getSourcePlayerName()
+                    + " | tick " + session.getTick());
+        }
+    }
+
+    private static final class CollectionSnapshot {
+        private final List<PlaybackSession> sessions;
+        private CollectionSnapshot(java.util.Collection<PlaybackSession> sessions) {
+            this.sessions = new ArrayList<>(sessions);
+        }
     }
 
     private void handleRecording(CommandSender sender, String[] args) {
@@ -133,9 +244,7 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
         }
         sender.sendMessage(ChatColor.GREEN + "Recording stopped: " + session.getId()
                 + " (" + session.getDurationTicks() + " ticks)");
-        if (session.getInstantSaveName() != null) {
-            sender.sendMessage(ChatColor.GREEN + "Saved as: " + session.getInstantSaveName());
-        }
+        if (session.getInstantSaveName() != null) sender.sendMessage(ChatColor.GREEN + "Saved as: " + session.getInstantSaveName());
     }
 
     private void discardRecording(CommandSender sender, String[] args) {
@@ -170,13 +279,11 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
             session = recordingManager.getCompleted().stream()
                     .filter(value -> value.getSourcePlayerId().equals(player.getUniqueId()))
                     .max(Comparator.comparing(RecordingSession::getStoppedAt,
-                            Comparator.nullsFirst(Comparator.naturalOrder())))
-                    .orElse(null);
+                            Comparator.nullsFirst(Comparator.naturalOrder()))).orElse(null);
         } else if (!recordingManager.getCompleted().isEmpty()) {
             session = recordingManager.getCompleted().stream()
                     .max(Comparator.comparing(RecordingSession::getStoppedAt,
-                            Comparator.nullsFirst(Comparator.naturalOrder())))
-                    .orElse(null);
+                            Comparator.nullsFirst(Comparator.naturalOrder()))).orElse(null);
         }
         if (session == null) {
             sender.sendMessage(ChatColor.RED + "No completed recording is available to save.");
@@ -213,8 +320,7 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(ChatColor.GOLD + "Saved recordings: " + recordingManager.getSavedNames().size());
             for (String name : recordingManager.getSavedNames()) {
                 RecordingSession session = recordingManager.getSaved(name);
-                sender.sendMessage(ChatColor.GRAY + "  " + name + " | " + session.getDurationTicks() + " ticks | "
-                        + session.getSourcePlayerName());
+                sender.sendMessage(ChatColor.GRAY + "  " + name + " | " + session.getDurationTicks() + " ticks | " + session.getSourcePlayerName());
             }
             return;
         }
@@ -223,23 +329,17 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
                 case "copy" -> {
                     requireArgs(sender, args, 4, "/mocap recordings copy <src_name> <dest_name>");
                     if (args.length < 4) return;
-                    sender.sendMessage(recordingManager.copy(args[2], args[3])
-                            ? ChatColor.GREEN + "Recording copied."
-                            : ChatColor.RED + "Unable to copy recording.");
+                    sender.sendMessage(recordingManager.copy(args[2], args[3]) ? ChatColor.GREEN + "Recording copied." : ChatColor.RED + "Unable to copy recording.");
                 }
                 case "rename" -> {
                     requireArgs(sender, args, 4, "/mocap recordings rename <old_name> <new_name>");
                     if (args.length < 4) return;
-                    sender.sendMessage(recordingManager.rename(args[2], args[3])
-                            ? ChatColor.GREEN + "Recording renamed."
-                            : ChatColor.RED + "Unable to rename recording.");
+                    sender.sendMessage(recordingManager.rename(args[2], args[3]) ? ChatColor.GREEN + "Recording renamed." : ChatColor.RED + "Unable to rename recording.");
                 }
                 case "remove" -> {
                     requireArgs(sender, args, 3, "/mocap recordings remove <name>");
                     if (args.length < 3) return;
-                    sender.sendMessage(recordingManager.removeSaved(args[2])
-                            ? ChatColor.GREEN + "Recording removed."
-                            : ChatColor.RED + "Recording not found.");
+                    sender.sendMessage(recordingManager.removeSaved(args[2]) ? ChatColor.GREEN + "Recording removed." : ChatColor.RED + "Recording not found.");
                 }
                 case "info" -> {
                     requireArgs(sender, args, 3, "/mocap recordings info <name>");
@@ -260,14 +360,13 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendRecordingInfo(CommandSender sender, RecordingSession session) {
-        sender.sendMessage(ChatColor.GRAY + "  " + session.getId() + " | " + session.getSourcePlayerName()
-                + " | " + session.getDurationTicks() + " ticks");
+        sender.sendMessage(ChatColor.GRAY + "  " + session.getId() + " | " + session.getSourcePlayerName() + " | " + session.getDurationTicks() + " ticks");
     }
 
     private @Nullable UUID parseId(CommandSender sender, String value) {
         try { return UUID.fromString(value); }
         catch (IllegalArgumentException ignored) {
-            sender.sendMessage(ChatColor.RED + "Invalid recording id: " + value);
+            sender.sendMessage(ChatColor.RED + "Invalid id: " + value);
             return null;
         }
     }
@@ -289,7 +388,10 @@ public final class MoCapCommand implements CommandExecutor, TabCompleter {
                                                  @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) return partial(args[0], List.of("recording", "playback", "recordings", "scenes", "settings", "misc", "info", "help"));
         if (args.length == 2 && args[0].equalsIgnoreCase("recording")) return partial(args[1], List.of("start", "stop", "discard", "save", "list"));
+        if (args.length == 2 && args[0].equalsIgnoreCase("playback")) return partial(args[1], List.of("start", "stop", "stop_all", "modifiers", "list"));
         if (args.length == 2 && args[0].equalsIgnoreCase("recordings")) return partial(args[1], List.of("copy", "rename", "remove", "info", "list"));
+        if (args.length == 3 && args[0].equalsIgnoreCase("playback") && args[1].equalsIgnoreCase("start")) return new ArrayList<>(recordingManager.getSavedNames());
+        if (args.length == 3 && args[0].equalsIgnoreCase("playback") && args[1].equalsIgnoreCase("stop_all")) return partial(args[2], List.of("including_others", "excluding_others"));
         return List.of();
     }
 

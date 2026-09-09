@@ -31,8 +31,17 @@ public final class PlaybackManager {
 
     public PlaybackSession play(UUID recordingId, Player viewer) {
         RecordingSession recording = recordingManager.get(recordingId);
-        if (recording == null) return null;
+        return recording == null ? null : play(recording, viewer);
+    }
+
+    public PlaybackSession playSaved(String name, Player viewer) {
+        RecordingSession recording = recordingManager.getSaved(name);
+        return recording == null ? null : play(recording, viewer);
+    }
+
+    public PlaybackSession play(RecordingSession recording, Player viewer) {
         PlaybackSession session = new PlaybackSession(recording, viewer);
+        if (session.isStopped()) return null;
         active.put(session.getId(), session);
         return session;
     }
@@ -41,6 +50,18 @@ public final class PlaybackManager {
         PlaybackSession session = active.remove(id);
         if (session != null) session.stop();
         return session;
+    }
+
+    public int stopAll(Player owner) {
+        int stopped = 0;
+        for (PlaybackSession session : new ArrayList<>(active.values())) {
+            if (owner == null || owner.getUniqueId().equals(session.getViewerPlayerId())) {
+                session.stop();
+                active.remove(session.getId());
+                stopped++;
+            }
+        }
+        return stopped;
     }
 
     public PlaybackSession get(UUID id) { return active.get(id); }

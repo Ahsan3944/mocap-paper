@@ -2,6 +2,7 @@ package com.ultraop.mocap.playback;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
+import com.ultraop.mocap.recording.EntityStateFrame;
 import com.ultraop.mocap.recording.PlayerStateFrame;
 import com.ultraop.mocap.recording.RecordingSession;
 import org.bukkit.Bukkit;
@@ -13,15 +14,19 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
-/** Tick-driven playback timeline backed by a server-side playback actor. */
+/** Tick-driven playback timeline backed by server-side playback actors. */
 public final class PlaybackSession {
     private final UUID id;
     private final RecordingSession recording;
     private final UUID viewerPlayerId;
     private final List<PlayerStateFrame> frames;
+    private final Map<UUID, List<EntityStateFrame>> entityFrames;
+    private final Map<UUID, EntityPlaybackActor> entityActors = new LinkedHashMap<>();
     private final FakePlayer fakePlayer;
     private final EntityPlaybackActor entityActor;
     private final PlaybackModifiers modifiers;
@@ -36,9 +41,7 @@ public final class PlaybackSession {
 
     public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null, true); }
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null, true); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) {
-        this(recording, viewer, modifiers, parentTransformer, false);
-    }
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) { this(recording, viewer, modifiers, parentTransformer, false); }
 
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers,
                            PositionTransformer parentTransformer, boolean root) {
@@ -46,6 +49,7 @@ public final class PlaybackSession {
         this.recording = recording;
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
+        this.entityFrames = recording.getEntityFrames();
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
         this.root = root;
         this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
@@ -71,7 +75,10 @@ public final class PlaybackSession {
         }
 
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
-        if (waitTicks == 0) applyFrame(first);
+        if (waitTicks == 0) {
+            applyFrame(first);
+            applyEntityFrames();
+        }
     }
 
     public UUID getId() { return id; }
@@ -95,6 +102,7 @@ public final class PlaybackSession {
         finished = true;
         if (fakePlayer != null) fakePlayer.remove();
         if (entityActor != null) entityActor.remove();
+        removeRecordedEntities();
     }
 
     public void advance() {
@@ -116,6 +124,7 @@ public final class PlaybackSession {
         }
         if (tick >= frames.size()) { finishOrWaitOnEnd(); return; }
         applyFrame(frames.get((int) tick));
+        applyEntityFrames();
         tick++;
     }
 
@@ -129,11 +138,15 @@ public final class PlaybackSession {
     }
 
     private void restartLoop() {
+        removeRecordedEntities();
         tick = 0;
         waitTicks = 0;
         waitOnEnd = 0;
         finished = false;
-        if (!frames.isEmpty()) applyFrame(frames.get(0));
+        if (!frames.isEmpty()) {
+            applyFrame(frames.get(0));
+            applyEntityFrames();
+        }
     }
 
     private boolean shouldSelfStop() { return root || !modifiers.waitForParentEnd(); }
@@ -141,12 +154,52 @@ public final class PlaybackSession {
     private void applyFrame(PlayerStateFrame frame) {
         World world = findWorld(frame.worldKey(), currentWorld());
         Location transformed = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
-        if (entityActor != null) {
-            entityActor.apply(frame, transformed);
-        } else {
+        if (entityActor != null) entityActor.apply(frame, transformed);
+        else {
             fakePlayer.apply(frame);
             fakePlayer.getBukkitEntity().teleport(transformed);
         }
+    }
+
+    private void applyEntityFrames() {
+        for (Map.Entry<UUID, List<EntityStateFrame>> entry : entityFrames.entrySet()) {
+            EntityStateFrame frame = frameAtTick(entry.getValue(), tick);
+            if (frame == null) continue;
+            EntityPlaybackActor actor = entityActors.get(entry.getKey());
+            if (actor == null) {
+                EntityType type = EntityType.fromName(frame.entityType());
+                if (type == null || type == EntityType.PLAYER || !modifiers.entityFilter().matches(type)) continue;
+                World world = findWorld(frame.worldKey(), currentWorld());
+                Location location = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
+                try {
+                    Entity entity = world.spawnEntity(location, type);
+                    actor = new EntityPlaybackActor(entity, modifiers.sceneScale());
+                    entityActors.put(entry.getKey(), actor);
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+            }
+            World world = findWorld(frame.worldKey(), actor.entity().getWorld());
+            Location location = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
+            actor.apply(frame, location);
+        }
+    }
+
+    private static EntityStateFrame frameAtTick(List<EntityStateFrame> timeline, long targetTick) {
+        int low = 0, high = timeline.size() - 1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            long value = timeline.get(mid).tick();
+            if (value < targetTick) low = mid + 1;
+            else if (value > targetTick) high = mid - 1;
+            else return timeline.get(mid);
+        }
+        return null;
+    }
+
+    private void removeRecordedEntities() {
+        for (EntityPlaybackActor actor : entityActors.values()) actor.remove();
+        entityActors.clear();
     }
 
     private World currentWorld() {

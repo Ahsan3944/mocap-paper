@@ -15,6 +15,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
     private RecordingManager recordingManager; private PlaybackManager playbackManager; private SceneManager sceneManager;
     private MoCapCommand mocapCommand; private RootMoCapCommand rootCommand; private ParityMoCapCommand parityCommand;
     @Override public void onEnable(){
+        saveDefaultConfig();
         recordingManager=new RecordingManager(this); recordingManager.start();
         getServer().getPluginManager().registerEvents(new RecordingBlockListener(recordingManager),this);
         getServer().getPluginManager().registerEvents(new RecordingActionListener(recordingManager),this);

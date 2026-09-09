@@ -3,6 +3,7 @@ package com.ultraop.mocap.recording;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Pose;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 
@@ -22,6 +23,8 @@ public record EntityStateFrame(
         double velocityX,
         double velocityY,
         double velocityZ,
+        Pose pose,
+        float fallDistance,
         int fireTicks,
         boolean invisible,
         boolean glowing,
@@ -46,7 +49,8 @@ public record EntityStateFrame(
                 tick, entity.getUniqueId(), entity.getType().getKey().toString(),
                 location.getWorld().getKey().toString(), location.getX(), location.getY(), location.getZ(),
                 location.getYaw(), location.getPitch(), entity.getVelocity().getX(), entity.getVelocity().getY(),
-                entity.getVelocity().getZ(), entity.getFireTicks(), entity.isInvisible(), entity.isGlowing(),
+                entity.getVelocity().getZ(), living == null ? Pose.STANDING : living.getPose(),
+                living == null ? 0.0f : living.getFallDistance(), entity.getFireTicks(), entity.isInvisible(), entity.isGlowing(),
                 living != null && living.isInvulnerable(), living == null ? -1.0 : living.getHealth(),
                 equipment == null ? null : cloneItem(equipment.getItemInMainHand()),
                 equipment == null ? null : cloneItem(equipment.getItemInOffHand()), armor, vehicleId);

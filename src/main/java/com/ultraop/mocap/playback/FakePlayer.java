@@ -14,6 +14,7 @@ import org.bukkit.Location;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.util.UUID;
 
@@ -47,7 +48,7 @@ public final class FakePlayer extends ServerPlayer {
         Location location = new Location(getBukkitEntity().getWorld(), frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch());
         Player player = getBukkitEntity();
         player.teleport(location);
-        player.setVelocity(frame.velocityX(), frame.velocityY(), frame.velocityZ());
+        player.setVelocity(new Vector(frame.velocityX(), frame.velocityY(), frame.velocityZ()));
         player.setSprinting(frame.sprinting());
         player.setSneaking(frame.sneaking());
         player.setSwimming(frame.swimming());
@@ -85,16 +86,22 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     private static final class FakeConnectionHandler extends ServerGamePacketListenerImpl {
-        private static final Connection DUMMY_CONNECTION = new Connection(PacketFlow.CLIENTBOUND);
+        private static final Connection DUMMY_CONNECTION = new DummyConnection(PacketFlow.CLIENTBOUND);
 
         private FakeConnectionHandler(MinecraftServer server, ServerPlayer player, GameProfile profile) {
             super(server, DUMMY_CONNECTION, player,
-                    new CommonListenerCookie(profile, 0, DEFAULT_CLIENT_INFO, false));
+                    CommonListenerCookie.createInitial(profile, false));
         }
 
         @Override public boolean hasClientLoaded() { return true; }
         @Override public void tick() { }
         @Override public void disconnect(net.minecraft.network.chat.Component message) { }
         @Override public void send(Packet<?> packet) { }
+    }
+
+    private static final class DummyConnection extends Connection {
+        private DummyConnection(PacketFlow packetFlow) {
+            super(packetFlow);
+        }
     }
 }

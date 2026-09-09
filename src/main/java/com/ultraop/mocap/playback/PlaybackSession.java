@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,6 +19,7 @@ public final class PlaybackSession {
     private final List<PlayerStateFrame> frames;
     private final FakePlayer fakePlayer;
     private final PlaybackModifiers modifiers;
+    private final PositionTransformer transformer;
     private long tick;
     private long waitTicks;
     private boolean waitingForEnd;
@@ -31,14 +33,15 @@ public final class PlaybackSession {
         this.recording = recording;
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
-        this.modifiers = modifiers;
+        this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
+        this.transformer = new PositionTransformer(this.modifiers, null, calculateCenter(viewer));
         if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
-        String displayName = modifiers.playerName() == null || modifiers.playerName().isBlank() ? recording.getSourcePlayerName() : modifiers.playerName();
+        String displayName = this.modifiers.playerName() == null ? recording.getSourcePlayerName() : this.modifiers.playerName();
         this.fakePlayer = FakePlayer.spawn(spawn, recording.getSourcePlayerId(), displayName);
-        this.waitTicks = secondsToTicks(modifiers.startDelaySeconds() + modifiers.waitOnStartSeconds());
+        this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
         if (waitTicks == 0) applyFrame(first);
     }
 
@@ -59,14 +62,9 @@ public final class PlaybackSession {
     public void advance() {
         if (paused || stopped) return;
         if (waitTicks > 0) { waitTicks--; return; }
-        if (waitingForEnd) { waitingForEnd = false; stop(); return; }
+        if (waitingForEnd) { waitingForEnd = false; if (modifiers.loop()) { restartLoop(); } else stop(); return; }
         if (tick >= frames.size()) {
-            if (modifiers.loop()) {
-                if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
-                tick = 0; waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
-                if (waitTicks == 0) applyFrame(frames.get(0));
-                return;
-            }
+            if (modifiers.loop()) { restartLoop(); return; }
             if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
             stop(); return;
         }
@@ -74,9 +72,17 @@ public final class PlaybackSession {
         tick++;
     }
 
+    private void restartLoop() {
+        tick = 0;
+        waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
+        waitingForEnd = false;
+        if (waitTicks == 0 && !frames.isEmpty()) applyFrame(frames.get(0));
+    }
+
     private void applyFrame(PlayerStateFrame frame) {
         fakePlayer.apply(frame);
-        Location transformed = transform(new Location(findWorld(frame.worldKey(), fakePlayer.getBukkitEntity().getWorld()), frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
+        World world = findWorld(frame.worldKey(), fakePlayer.getBukkitEntity().getWorld());
+        Location transformed = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
         fakePlayer.getBukkitEntity().teleport(transformed);
     }
 
@@ -87,27 +93,29 @@ public final class PlaybackSession {
         return transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
     }
 
-    private Location transform(Location source) {
-        double x = source.getX() * modifiers.sceneScale();
-        double y = source.getY() * modifiers.sceneScale() + modifiers.offsetY();
-        double z = source.getZ() * modifiers.sceneScale();
-        double radians = Math.toRadians(modifiers.rotationDegrees());
-        double cos = Math.cos(radians), sin = Math.sin(radians);
-        double rx = x * cos - z * sin, rz = x * sin + z * cos;
-        switch (modifiers.mirror()) {
-            case X -> rx = -rx;
-            case Z -> rz = -rz;
-            case XZ -> { rx = -rx; rz = -rz; }
-            case NONE -> { }
-        }
-        rx += modifiers.offsetX(); rz += modifiers.offsetZ();
-        float yaw = source.getYaw() + (float) modifiers.rotationDegrees();
-        if (modifiers.mirror() == PlaybackModifiers.Mirror.X) yaw = 180.0f - yaw;
-        else if (modifiers.mirror() == PlaybackModifiers.Mirror.Z) yaw = -yaw;
-        else if (modifiers.mirror() == PlaybackModifiers.Mirror.XZ) yaw = yaw + 180.0f;
-        return new Location(source.getWorld(), rx, y, rz, yaw, source.getPitch());
+    private Location transform(Location source) { return transformer.transform(source); }
+
+    private Vector calculateCenter(Player viewer) {
+        if (frames.isEmpty()) return viewer.getLocation().toVector();
+        PlayerStateFrame start = frames.get(0);
+        Vector pos = new Vector(start.x(), start.y(), start.z());
+        return switch (recordingCenter()) {
+            case ACTUAL -> pos;
+            case BLOCK_CORNER -> new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
+            case BLOCK_CENTER -> new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
+            case AUTO -> chooseAutoCenter(pos);
+        };
     }
 
-    private static long secondsToTicks(double seconds) { return Math.max(0L, Math.round(seconds * 20.0)); }
+    private PlaybackCenter recordingCenter() { return PlaybackCenter.AUTO; }
+
+    private Vector chooseAutoCenter(Vector pos) {
+        Vector center = new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
+        Vector corner = new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
+        return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
+    }
+
+    private enum PlaybackCenter { AUTO, BLOCK_CENTER, BLOCK_CORNER, ACTUAL }
+    private static long secondsToTicks(double seconds) { return Math.max(0L, (long) Math.ceil(seconds * 20.0)); }
     private static World findWorld(String worldKey, World fallback) { for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world; return fallback; }
 }

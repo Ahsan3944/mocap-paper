@@ -2,7 +2,10 @@ package com.ultraop.mocap.scene;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.ultraop.mocap.playback.EntityFilter;
 import com.ultraop.mocap.playback.PlaybackModifiers;
+import com.ultraop.mocap.playback.PlayerAsEntity;
+import com.ultraop.mocap.playback.PlayerSkin;
 
 import java.util.Locale;
 
@@ -16,20 +19,10 @@ public record SceneElement(String name, PlaybackModifiers modifiers) {
     public JsonObject toJson() {
         JsonObject json = new JsonObject();
         json.addProperty("name", name);
-
         if (modifiers.playerName() != null) json.addProperty("player_name", modifiers.playerName());
-        if (modifiers.playerSkin() != null) {
-            JsonObject skin = new JsonObject();
-            skin.addProperty("skin_source", "from_file");
-            skin.addProperty("skin_path", modifiers.playerSkin());
-            json.add("player_skin", skin);
-        }
-        if (modifiers.playerAsEntity()) {
-            JsonObject entity = new JsonObject();
-            entity.addProperty("id", "minecraft:player");
-            json.add("player_as_entity", entity);
-        }
-        if (modifiers.entityFilter() != null) json.addProperty("entity_filter", modifiers.entityFilter());
+        if (!modifiers.playerSkin().isDefault()) json.add("player_skin", modifiers.playerSkin().toJson());
+        if (modifiers.playerAsEntity().enabled()) json.add("player_as_entity", modifiers.playerAsEntity().toJson());
+        if (modifiers.entityFilter().enabled()) json.addProperty("entity_filter", modifiers.entityFilter().expression());
 
         PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig();
         JsonObject transformations = new JsonObject();
@@ -43,8 +36,8 @@ public record SceneElement(String name, PlaybackModifiers modifiers) {
             transformations.add("scale", scale); hasTransformations = true;
         }
         if (modifiers.offsetX() != 0.0 || modifiers.offsetY() != 0.0 || modifiers.offsetZ() != 0.0) {
-            JsonArray offset = new JsonArray(); offset.add(modifiers.offsetX()); offset.add(modifiers.offsetY()); offset.add(modifiers.offsetZ());
-            transformations.add("offset", offset); hasTransformations = true;
+            JsonArray a = new JsonArray(); a.add(modifiers.offsetX()); a.add(modifiers.offsetY()); a.add(modifiers.offsetZ());
+            transformations.add("offset", a); hasTransformations = true;
         }
         if (!config.isDefault()) {
             JsonObject c = new JsonObject();
@@ -57,8 +50,8 @@ public record SceneElement(String name, PlaybackModifiers modifiers) {
                 c.add("scene_center", sc);
             }
             if (config.centerOffsetX() != 0.0 || config.centerOffsetY() != 0.0 || config.centerOffsetZ() != 0.0) {
-                JsonArray offset = new JsonArray(); offset.add(config.centerOffsetX()); offset.add(config.centerOffsetY()); offset.add(config.centerOffsetZ());
-                c.add("center_offset", offset);
+                JsonArray a = new JsonArray(); a.add(config.centerOffsetX()); a.add(config.centerOffsetY()); a.add(config.centerOffsetZ());
+                c.add("center_offset", a);
             }
             transformations.add("config", c); hasTransformations = true;
         }
@@ -77,62 +70,28 @@ public record SceneElement(String name, PlaybackModifiers modifiers) {
 
     public static SceneElement fromJson(JsonObject json) {
         if (!json.has("name")) throw new IllegalArgumentException("JSON \"name\" element not found");
-        String name = json.get("name").getAsString();
         PlaybackModifiers p = PlaybackModifiers.DEFAULT;
-
         if (json.has("player_name")) p = p.withPlayerName(json.get("player_name").getAsString());
-        if (json.has("player_skin") && json.get("player_skin").isJsonObject()) {
-            JsonObject skin = json.getAsJsonObject("player_skin");
-            if (skin.has("skin_path")) p = p.withPlayerSkin(skin.get("skin_path").getAsString());
-        } else if (json.has("player_skin")) p = p.withPlayerSkin(json.get("player_skin").getAsString());
-        if (json.has("player_as_entity")) {
-            JsonObject entity = json.get("player_as_entity").isJsonObject() ? json.getAsJsonObject("player_as_entity") : null;
-            p = p.withPlayerAsEntity(entity != null && entity.has("id"));
-        }
-        if (json.has("entity_filter")) p = p.withEntityFilter(json.get("entity_filter").getAsString());
+        if (json.has("player_skin") && json.get("player_skin").isJsonObject()) p = p.withPlayerSkin(PlayerSkin.fromJson(json.getAsJsonObject("player_skin")));
+        if (json.has("player_as_entity") && json.get("player_as_entity").isJsonObject()) p = p.withPlayerAsEntity(PlayerAsEntity.fromJson(json.getAsJsonObject("player_as_entity")));
+        if (json.has("entity_filter")) p = p.withEntityFilter(new EntityFilter(json.get("entity_filter").getAsString()));
 
         if (json.has("transformations")) {
             JsonObject t = json.getAsJsonObject("transformations");
             if (t.has("rotation")) p = p.withRotation(t.get("rotation").getAsDouble());
             if (t.has("mirror")) p = p.withMirror(PlaybackModifiers.Mirror.valueOf(t.get("mirror").getAsString().toUpperCase(Locale.ROOT)));
-            if (t.has("scale")) {
-                JsonObject s = t.getAsJsonObject("scale");
-                if (s.has("player_scale")) p = p.withPlayerScale(s.get("player_scale").getAsDouble());
-                if (s.has("scene_scale")) p = p.withSceneScale(s.get("scene_scale").getAsDouble());
-            }
-            if (t.has("offset")) {
-                JsonArray a = t.getAsJsonArray("offset");
-                if (a.size() != 3) throw new IllegalArgumentException("Transformation offset must contain 3 values");
-                p = p.withOffset(a.get(0).getAsDouble(), a.get(1).getAsDouble(), a.get(2).getAsDouble());
-            }
+            if (t.has("scale")) { JsonObject s = t.getAsJsonObject("scale"); if (s.has("player_scale")) p = p.withPlayerScale(s.get("player_scale").getAsDouble()); if (s.has("scene_scale")) p = p.withSceneScale(s.get("scene_scale").getAsDouble()); }
+            if (t.has("offset")) { JsonArray a = t.getAsJsonArray("offset"); if (a.size() != 3) throw new IllegalArgumentException("Transformation offset must contain 3 values"); p = p.withOffset(a.get(0).getAsDouble(), a.get(1).getAsDouble(), a.get(2).getAsDouble()); }
             if (t.has("config")) {
-                JsonObject c = t.getAsJsonObject("config");
-                PlaybackModifiers.TransformationConfig tc = p.transformationConfig();
+                JsonObject c = t.getAsJsonObject("config"); PlaybackModifiers.TransformationConfig tc = p.transformationConfig();
                 if (c.has("round_block_pos")) tc = tc.withRoundBlockPos(c.get("round_block_pos").getAsBoolean());
                 if (c.has("recording_center")) tc = tc.withRecordingCenter(PlaybackModifiers.RecordingCenter.valueOf(c.get("recording_center").getAsString().toUpperCase(Locale.ROOT)));
-                if (c.has("scene_center")) {
-                    JsonObject sc = c.getAsJsonObject("scene_center");
-                    PlaybackModifiers.SceneCenterType type = sc.has("type") ? PlaybackModifiers.SceneCenterType.valueOf(sc.get("type").getAsString().toUpperCase(Locale.ROOT)) : PlaybackModifiers.SceneCenterType.COMMON_FIRST;
-                    String specific = sc.has("specific_str") ? sc.get("specific_str").getAsString() : null;
-                    tc = tc.withSceneCenter(type, specific);
-                }
-                if (c.has("center_offset")) {
-                    JsonArray a = c.getAsJsonArray("center_offset");
-                    if (a.size() != 3) throw new IllegalArgumentException("Center offset must contain 3 values");
-                    tc = tc.withCenterOffset(a.get(0).getAsDouble(), a.get(1).getAsDouble(), a.get(2).getAsDouble());
-                }
+                if (c.has("scene_center")) { JsonObject sc = c.getAsJsonObject("scene_center"); PlaybackModifiers.SceneCenterType type = sc.has("type") ? PlaybackModifiers.SceneCenterType.valueOf(sc.get("type").getAsString().toUpperCase(Locale.ROOT)) : PlaybackModifiers.SceneCenterType.COMMON_FIRST; tc = tc.withSceneCenter(type, sc.has("specific_str") ? sc.get("specific_str").getAsString() : null); }
+                if (c.has("center_offset")) { JsonArray a = c.getAsJsonArray("center_offset"); if (a.size() != 3) throw new IllegalArgumentException("Center offset must contain 3 values"); tc = tc.withCenterOffset(a.get(0).getAsDouble(), a.get(1).getAsDouble(), a.get(2).getAsDouble()); }
                 p = p.withTransformationConfig(tc);
             }
         }
-
-        if (json.has("time")) {
-            JsonObject time = json.getAsJsonObject("time");
-            if (time.has("start_delay")) p = p.withStartDelay(time.get("start_delay").getAsDouble());
-            if (time.has("wait_on_start")) p = p.withWaitOnStart(time.get("wait_on_start").getAsDouble());
-            if (time.has("wait_on_end")) p = p.withWaitOnEnd(time.get("wait_on_end").getAsDouble());
-            if (time.has("wait_for_parent_end")) p = p.withWaitForParentEnd(time.get("wait_for_parent_end").getAsBoolean());
-            if (time.has("loop")) p = p.withLoop(time.get("loop").getAsBoolean());
-        }
-        return new SceneElement(name, p);
+        if (json.has("time")) { JsonObject time = json.getAsJsonObject("time"); if (time.has("start_delay")) p = p.withStartDelay(time.get("start_delay").getAsDouble()); if (time.has("wait_on_start")) p = p.withWaitOnStart(time.get("wait_on_start").getAsDouble()); if (time.has("wait_on_end")) p = p.withWaitOnEnd(time.get("wait_on_end").getAsDouble()); if (time.has("wait_for_parent_end")) p = p.withWaitForParentEnd(time.get("wait_for_parent_end").getAsBoolean()); if (time.has("loop")) p = p.withLoop(time.get("loop").getAsBoolean()); }
+        return new SceneElement(json.get("name").getAsString(), p);
     }
 }

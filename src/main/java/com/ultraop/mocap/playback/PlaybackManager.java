@@ -18,6 +18,7 @@ public final class PlaybackManager {
     private final JavaPlugin plugin;
     private final RecordingManager recordingManager;
     private final Map<UUID, PlaybackSession> active = new LinkedHashMap<>();
+    private final Map<UUID, PlaybackModifiers> modifiers = new LinkedHashMap<>();
     private BukkitTask ticker;
 
     public PlaybackManager(JavaPlugin plugin, RecordingManager recordingManager) {
@@ -40,7 +41,7 @@ public final class PlaybackManager {
     }
 
     public PlaybackSession play(RecordingSession recording, Player viewer) {
-        PlaybackSession session = new PlaybackSession(recording, viewer);
+        PlaybackSession session = new PlaybackSession(recording, viewer, getModifiers(viewer));
         if (session.isStopped()) return null;
         active.put(session.getId(), session);
         return session;
@@ -66,6 +67,18 @@ public final class PlaybackManager {
 
     public PlaybackSession get(UUID id) { return active.get(id); }
 
+    public PlaybackModifiers getModifiers(Player player) {
+        return modifiers.getOrDefault(player.getUniqueId(), PlaybackModifiers.DEFAULT);
+    }
+
+    public void setModifiers(Player player, PlaybackModifiers value) {
+        modifiers.put(player.getUniqueId(), value);
+    }
+
+    public void resetModifiers(Player player) {
+        modifiers.remove(player.getUniqueId());
+    }
+
     public Collection<PlaybackSession> getActive() {
         return java.util.Collections.unmodifiableList(new ArrayList<>(active.values()));
     }
@@ -74,6 +87,7 @@ public final class PlaybackManager {
         if (ticker != null) { ticker.cancel(); ticker = null; }
         active.values().forEach(PlaybackSession::stop);
         active.clear();
+        modifiers.clear();
     }
 
     private void tick() {

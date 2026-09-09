@@ -17,7 +17,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
         this.recordingManager.start();
         this.playbackManager = new PlaybackManager(this, recordingManager);
         this.playbackManager.start();
-        this.mocapCommand = new MoCapCommand(this, recordingManager);
+        this.mocapCommand = new MoCapCommand(this, recordingManager, playbackManager);
 
         if (getCommand("mocap") == null) {
             getLogger().severe("The /mocap command is not registered in plugin.yml.");

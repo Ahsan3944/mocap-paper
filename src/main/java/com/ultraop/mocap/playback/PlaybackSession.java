@@ -1,6 +1,7 @@
 package com.ultraop.mocap.playback;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 import com.ultraop.mocap.recording.PlayerStateFrame;
 import com.ultraop.mocap.recording.RecordingSession;
 import org.bukkit.Bukkit;
@@ -32,9 +33,7 @@ public final class PlaybackSession {
 
     public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null, true); }
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null, true); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) {
-        this(recording, viewer, modifiers, parentTransformer, false);
-    }
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) { this(recording, viewer, modifiers, parentTransformer, false); }
 
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers,
                            PositionTransformer parentTransformer, boolean root) {
@@ -135,13 +134,21 @@ public final class PlaybackSession {
     private Location transform(Location source) { return transformer.transform(source); }
 
     private GameProfile resolveProfile(Player viewer) {
-        String playerName = modifiers.playerName();
-        if (modifiers.playerSkin().source() == PlayerSkin.Source.FROM_PLAYER) {
-            Player online = Bukkit.getPlayerExact(modifiers.playerSkin().path());
+        PlayerSkin skin = modifiers.playerSkin();
+        if (skin.source() == PlayerSkin.Source.FROM_PLAYER) {
+            Player online = Bukkit.getPlayerExact(skin.path());
             if (online != null) return ((CraftPlayer) online).getProfile();
         }
-        if (modifiers.playerSkin().source() == PlayerSkin.Source.DEFAULT && playerName != null) {
-            Player online = Bukkit.getPlayerExact(playerName);
+        if (skin.source() == PlayerSkin.Source.FROM_MINESKIN) {
+            Property property = MineSkinSkins.getProperty(skin.path());
+            if (property != null) {
+                GameProfile profile = new GameProfile(UUID.randomUUID(), modifiers.playerName() == null ? "MoCap" : modifiers.playerName());
+                profile.getProperties().put("textures", property);
+                return profile;
+            }
+        }
+        if (skin.source() == PlayerSkin.Source.DEFAULT && modifiers.playerName() != null) {
+            Player online = Bukkit.getPlayerExact(modifiers.playerName());
             if (online != null) return ((CraftPlayer) online).getProfile();
         }
         return ((CraftPlayer) viewer).getProfile();

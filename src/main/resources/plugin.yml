@@ -1,0 +1,16 @@
+name: MoCapPaper
+version: '${version}'
+main: com.ultraop.mocap.MoCapPaperPlugin
+description: Paper 1.21.11 implementation of the Minecraft Motion Capture (MoCap) mod behavior.
+author: Ahsan3944
+website: https://github.com/Ahsan3944/mocap-paper
+api-version: '1.21.11'
+commands:
+  mocap:
+    description: Motion Capture command root.
+    usage: /mocap
+    permission: mocap.use
+permissions:
+  mocap.use:
+    description: Access to MoCap commands.
+    default: op

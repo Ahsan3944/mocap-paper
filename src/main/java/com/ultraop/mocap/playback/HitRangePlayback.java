@@ -1,15 +1,13 @@
 package com.ultraop.mocap.playback;
 
-import com.mojang.authlib.GameProfile;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
-import org.bukkit.craftbukkit.entity.CraftEntity;
-import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.craftbukkit.entity.CraftEntity;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -57,11 +55,11 @@ public final class HitRangePlayback {
             }
         }
 
-        if (attacker instanceof LivingEntity living) {
+        if (attacker instanceof LivingEntity living && target instanceof LivingEntity targetLiving) {
             AttributeInstance damageAttribute = living.getAttribute(Attribute.ATTACK_DAMAGE);
             double damage = damageAttribute == null ? 1.0 : damageAttribute.getValue();
             if (Double.isFinite(damage) && damage > 0.0) {
-                target.damage(damage, attacker);
+                targetLiving.damage(damage, attacker);
             }
         }
     }

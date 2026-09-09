@@ -1,5 +1,6 @@
 package com.ultraop.mocap.recording;
 
+import com.ultraop.mocap.playback.FakePlayer;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Pose;
@@ -40,7 +41,7 @@ public record PlayerStateFrame(
         ItemStack mainHand,
         ItemStack offHand,
         ItemStack[] armor
-) {
+) implements FakePlayer.PlayerStateAdapter {
     public static PlayerStateFrame capture(Player player, long tick) {
         Location location = player.getLocation();
         ItemStack[] armor = Arrays.stream(player.getInventory().getArmorContents())

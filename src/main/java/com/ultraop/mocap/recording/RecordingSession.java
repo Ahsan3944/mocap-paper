@@ -35,7 +35,6 @@ public final class RecordingSession {
         }
         if(died){captureDeadTick(p);return false;}
         UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);if(p.isDead()){died=true;diedTick=nextTick;}nextTick++;lastWorldKey=currentWorld;
-        if(died&&onDeath==OnDeath.END_RECORDING)stop();
         return false;
     }
     private void captureDeadTick(Player p){long diff=nextTick-diedTick;if(onDeath==OnDeath.CONTINUE_SYNCED||diff<20){UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);nextTick++;}if(diff>=20&&onDeath==OnDeath.END_RECORDING)stop();}

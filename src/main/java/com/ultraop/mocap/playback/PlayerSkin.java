@@ -2,8 +2,9 @@ package com.ultraop.mocap.playback;
 
 import com.google.gson.JsonObject;
 
-import java.net.URI;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Command and scene-file representation of MoCap's player_skin modifier.
@@ -11,6 +12,10 @@ import java.util.Objects;
  * loading remains deterministic and does not perform network requests.
  */
 public record PlayerSkin(Source source, String path) {
+    private static final String MINESKIN_URL_PREFIX1 = "minesk.in/";
+    private static final String MINESKIN_URL_PREFIX2 = "mineskin.org/skins/";
+    private static final Pattern MINESKIN_UUID_PATTERN = Pattern.compile("[0-9a-f]*");
+
     public enum Source {
         DEFAULT,
         FROM_PLAYER,
@@ -47,6 +52,10 @@ public record PlayerSkin(Source source, String path) {
         return source == Source.DEFAULT;
     }
 
+    public boolean isSkinList() {
+        return source == Source.FROM_FILE && path != null && path.startsWith("skin_list:");
+    }
+
     public PlayerSkin mergeWithParent(PlayerSkin parent) {
         return isDefault() && parent != null ? parent : this;
     }
@@ -63,7 +72,7 @@ public record PlayerSkin(Source source, String path) {
         if (json == null || json.isEmpty()) return DEFAULT;
         String source = json.has("skin_source") ? json.get("skin_source").getAsString() : "default";
         String path = json.has("skin_path") ? json.get("skin_path").getAsString() : null;
-        return switch (source.toLowerCase(java.util.Locale.ROOT)) {
+        return switch (source.toLowerCase(Locale.ROOT)) {
             case "default" -> DEFAULT;
             case "from_player" -> fromPlayer(path);
             case "from_file" -> fromFile(path);
@@ -82,15 +91,14 @@ public record PlayerSkin(Source source, String path) {
     }
 
     private static void validateMineSkinUrl(String value) {
-        try {
-            URI uri = URI.create(value);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
-                    || !"mineskin.org".equalsIgnoreCase(uri.getHost())) {
-                throw new IllegalArgumentException("MineSkin URL must use https://mineskin.org");
-            }
-        } catch (IllegalArgumentException e) {
-            if (e.getMessage() != null && e.getMessage().startsWith("MineSkin URL")) throw e;
-            throw new IllegalArgumentException("Invalid MineSkin URL: " + value, e);
+        String url = value;
+        if (url.startsWith("https://")) url = url.substring(8);
+        else if (url.startsWith("http://")) url = url.substring(7);
+        if (url.startsWith(MINESKIN_URL_PREFIX1)) url = url.substring(MINESKIN_URL_PREFIX1.length());
+        else if (url.startsWith(MINESKIN_URL_PREFIX2)) url = url.substring(MINESKIN_URL_PREFIX2.length());
+        else throw new IllegalArgumentException("Invalid MineSkin URL: " + value);
+        if (url.length() != 32 || !MINESKIN_UUID_PATTERN.matcher(url).matches()) {
+            throw new IllegalArgumentException("Invalid MineSkin URL: " + value);
         }
     }
 }

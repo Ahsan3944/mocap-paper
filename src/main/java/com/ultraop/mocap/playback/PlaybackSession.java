@@ -8,7 +8,7 @@ import org.bukkit.entity.Player;
 import java.util.List;
 import java.util.UUID;
 
-/** Tick-driven playback timeline. Entity presentation is deliberately isolated from the timeline. */
+/** Tick-driven playback timeline. Entity presentation is isolated from the timeline. */
 public final class PlaybackSession {
     private final UUID id;
     private final RecordingSession recording;

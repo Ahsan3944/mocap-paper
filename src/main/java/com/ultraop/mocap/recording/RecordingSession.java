@@ -1,6 +1,5 @@
 package com.ultraop.mocap.recording;
 
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
@@ -14,6 +13,8 @@ import java.util.UUID;
 
 /** In-memory recording produced by one recording session. */
 public final class RecordingSession {
+    private static final double ENTITY_TRACKING_DISTANCE = 128.0;
+
     private final UUID id;
     private final UUID sourcePlayerId;
     private final String sourcePlayerName;
@@ -70,12 +71,31 @@ public final class RecordingSession {
 
     void capture(Player player) {
         frames.add(PlayerStateFrame.capture(player, nextTick));
-        for (Entity entity : player.getNearbyEntities(32.0, 16.0, 32.0)) {
+        trackEntities(player);
+        nextTick++;
+    }
+
+    private void trackEntities(Player player) {
+        double maxDistanceSquared = ENTITY_TRACKING_DISTANCE * ENTITY_TRACKING_DISTANCE;
+        for (Entity entity : player.getWorld().getEntities()) {
             if (entity instanceof Player || !entity.isValid()) continue;
+            if (entity.getUniqueId().equals(sourcePlayerId)) continue;
+            if (player.getLocation().distanceSquared(entity.getLocation()) > maxDistanceSquared) continue;
+            if (isPlaybackEntity(entity)) continue;
+
             entityFrames.computeIfAbsent(entity.getUniqueId(), ignored -> new ArrayList<>())
                     .add(EntityStateFrame.capture(entity, nextTick));
         }
-        nextTick++;
+
+        entityFrames.entrySet().removeIf(entry -> {
+            List<EntityStateFrame> timeline = entry.getValue();
+            return timeline.isEmpty() || timeline.get(timeline.size() - 1).tick() != nextTick;
+        });
+    }
+
+    private static boolean isPlaybackEntity(Entity entity) {
+        return entity.getScoreboardTags().stream().anyMatch(tag ->
+                tag.equals("mocap_entity") || tag.equals("mocap:entity") || tag.startsWith("mocap_"));
     }
 
     void stop() {

@@ -1,5 +1,6 @@
 package com.ultraop.mocap.playback;
 
+import com.ultraop.mocap.recording.EntityStateFrame;
 import com.ultraop.mocap.recording.PlayerStateFrame;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
@@ -8,7 +9,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 
-/** Applies the recorded player timeline to the entity selected by player_as_entity. */
+/** Applies recorded timelines to a playback entity. */
 public final class EntityPlaybackActor {
     private final Entity entity;
     private final double scale;
@@ -19,26 +20,46 @@ public final class EntityPlaybackActor {
         applyScale();
     }
 
-    public Entity entity() {
-        return entity;
-    }
+    public Entity entity() { return entity; }
 
-    public void apply(PlayerStateFrame frame, Location location) {
+    public void apply(EntityStateFrame frame, Location location) {
+        if (!entity.isValid()) return;
         entity.teleport(location);
+        entity.setRotation(frame.yaw(), frame.pitch());
         entity.setVelocity(new Vector(frame.velocityX(), frame.velocityY(), frame.velocityZ()));
         entity.setFireTicks(frame.fireTicks());
         entity.setGlowing(frame.glowing());
         entity.setInvisible(frame.invisible());
-
         if (entity instanceof LivingEntity living) {
             living.setInvulnerable(frame.invulnerable());
-            living.setInvisible(frame.invisible());
-            living.setGlowing(frame.glowing());
-            living.setFireTicks(frame.fireTicks());
-            living.setVelocity(new Vector(frame.velocityX(), frame.velocityY(), frame.velocityZ()));
-            if (frame.health() > 0.0) {
-                living.setHealth(Math.min(living.getMaxHealth(), frame.health()));
+            if (frame.health() > 0.0) living.setHealth(Math.min(living.getMaxHealth(), frame.health()));
+            if (living.getEquipment() != null) {
+                living.getEquipment().setItemInMainHand(clone(frame.mainHand()));
+                living.getEquipment().setItemInOffHand(clone(frame.offHand()));
+                ItemStack[] armor = frame.armor();
+                if (armor.length >= 4) {
+                    living.getEquipment().setHelmet(clone(armor[0]));
+                    living.getEquipment().setChestplate(clone(armor[1]));
+                    living.getEquipment().setLeggings(clone(armor[2]));
+                    living.getEquipment().setBoots(clone(armor[3]));
+                }
             }
+        }
+        applyScale();
+    }
+
+    /** Compatibility path for player_as_entity playback. */
+    public void apply(PlayerStateFrame frame, Location location) {
+        if (!entity.isValid()) return;
+        entity.teleport(location);
+        entity.setRotation(frame.yaw(), frame.pitch());
+        entity.setVelocity(new Vector(frame.velocityX(), frame.velocityY(), frame.velocityZ()));
+        entity.setFireTicks(frame.fireTicks());
+        entity.setGlowing(frame.glowing());
+        entity.setInvisible(frame.invisible());
+        if (entity instanceof LivingEntity living) {
+            living.setInvulnerable(frame.invulnerable());
+            if (frame.health() > 0.0) living.setHealth(Math.min(living.getMaxHealth(), frame.health()));
             if (living.getEquipment() != null) {
                 living.getEquipment().setItemInMainHand(clone(frame.mainHand()));
                 living.getEquipment().setItemInOffHand(clone(frame.offHand()));
@@ -51,18 +72,12 @@ public final class EntityPlaybackActor {
         applyScale();
     }
 
-    public void remove() {
-        if (!entity.isDead()) entity.remove();
-    }
+    public void remove() { if (entity.isValid()) entity.remove(); }
 
     private void applyScale() {
         if (!(entity instanceof LivingEntity living) || !Double.isFinite(scale) || scale <= 0.0) return;
-        if (living.getAttribute(Attribute.SCALE) != null) {
-            living.getAttribute(Attribute.SCALE).setBaseValue(scale);
-        }
+        if (living.getAttribute(Attribute.SCALE) != null) living.getAttribute(Attribute.SCALE).setBaseValue(scale);
     }
 
-    private static ItemStack clone(ItemStack item) {
-        return item == null ? null : item.clone();
-    }
+    private static ItemStack clone(ItemStack item) { return item == null ? null : item.clone(); }
 }

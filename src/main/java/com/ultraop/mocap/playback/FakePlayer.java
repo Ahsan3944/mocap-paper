@@ -30,14 +30,22 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     public static FakePlayer spawn(Location location, UUID uuid, String name) {
-        return spawn(location, uuid, name, 1.0);
+        return spawn(location, new GameProfile(uuid, name), 1.0);
     }
 
     public static FakePlayer spawn(Location location, UUID uuid, String name, double scale) {
+        return spawn(location, new GameProfile(uuid, name), scale);
+    }
+
+    /**
+     * Spawns a fake player with the supplied profile. The profile may contain the
+     * Mojang "textures" property, which is how playback skins are applied.
+     */
+    public static FakePlayer spawn(Location location, GameProfile profile, double scale) {
         if (location.getWorld() == null) throw new IllegalArgumentException("Playback location has no world");
+        if (profile == null) throw new IllegalArgumentException("Playback profile cannot be null");
         if (!Double.isFinite(scale) || scale <= 0.0) throw new IllegalArgumentException("Player scale must be finite and greater than zero");
         ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
-        GameProfile profile = new GameProfile(uuid, name);
         FakePlayer player = new FakePlayer(level, profile);
         player.setPos(location.getX(), location.getY(), location.getZ());
         player.setYRot(location.getYaw());

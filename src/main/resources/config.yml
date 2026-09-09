@@ -1,3 +1,6 @@
 recording:
   on_death: end_recording
   on_change_dimension: end_recording
+playback:
+  block_actions_playback: true
+  block_initialization: true

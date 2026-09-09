@@ -20,23 +20,31 @@ public final class PlaybackSession {
     private final FakePlayer fakePlayer;
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
+    private final boolean root;
     private long tick;
     private long waitTicks;
-    private boolean waitingForEnd;
+    private long waitOnEnd;
     private boolean paused;
+    private boolean finished;
     private boolean stopped;
 
-    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null); }
-
+    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null, true); }
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null, true); }
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) {
+        this(recording, viewer, modifiers, parentTransformer, false);
+    }
+
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers,
+                           PositionTransformer parentTransformer, boolean root) {
         this.id = UUID.randomUUID();
         this.recording = recording;
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
+        this.root = root;
         this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
         if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
+
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
@@ -51,33 +59,76 @@ public final class PlaybackSession {
     public long getTick() { return tick; }
     public boolean isPaused() { return paused; }
     public boolean isStopped() { return stopped; }
-    public boolean isFinished() { return stopped || (tick >= frames.size() && !modifiers.loop() && !waitingForEnd && waitTicks == 0); }
+    public boolean isFinished() { return finished; }
+    public boolean isActive() { return !stopped && (!finished || modifiers.loop() || !modifiers.waitForParentEnd()); }
     public UUID getViewerPlayerId() { return viewerPlayerId; }
     public FakePlayer getFakePlayer() { return fakePlayer; }
     public PlaybackModifiers getModifiers() { return modifiers; }
     public PlayerStateFrame currentFrame() { return frames.isEmpty() || tick >= frames.size() ? null : frames.get((int) tick); }
     public void pause() { if (!stopped) paused = true; }
     public void resume() { if (!stopped) paused = false; }
-    public void stop() { if (stopped) return; stopped = true; if (fakePlayer != null) fakePlayer.remove(); }
+
+    public void stop() {
+        if (stopped) return;
+        stopped = true;
+        finished = true;
+        if (fakePlayer != null) fakePlayer.remove();
+    }
 
     public void advance() {
         if (paused || stopped) return;
-        if (waitTicks > 0) { waitTicks--; return; }
-        if (waitingForEnd) { waitingForEnd = false; if (modifiers.loop()) restartLoop(); else stop(); return; }
-        if (tick >= frames.size()) {
-            if (modifiers.loop()) { restartLoop(); return; }
-            if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
-            stop(); return;
+
+        if (waitTicks > 0) {
+            waitTicks--;
+            return;
         }
+
+        if (finished) {
+            if (modifiers.loop()) restartLoop();
+            else if (shouldSelfStop()) stop();
+            return;
+        }
+
+        if (waitOnEnd > 0) {
+            waitOnEnd--;
+            if (waitOnEnd == 0) {
+                finished = true;
+                if (modifiers.loop()) restartLoop();
+                else if (shouldSelfStop()) stop();
+            }
+            return;
+        }
+
+        if (tick >= frames.size()) {
+            finishOrWaitOnEnd();
+            return;
+        }
+
         applyFrame(frames.get((int) tick));
         tick++;
     }
 
+    private void finishOrWaitOnEnd() {
+        long endTicks = secondsToTicks(modifiers.waitOnEndSeconds());
+        if (endTicks == 0) {
+            finished = true;
+            if (modifiers.loop()) restartLoop();
+            else if (shouldSelfStop()) stop();
+        } else {
+            waitOnEnd = endTicks;
+        }
+    }
+
     private void restartLoop() {
         tick = 0;
-        waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
-        waitingForEnd = false;
-        if (waitTicks == 0 && !frames.isEmpty()) applyFrame(frames.get(0));
+        waitTicks = 0;
+        waitOnEnd = 0;
+        finished = false;
+        if (!frames.isEmpty()) applyFrame(frames.get(0));
+    }
+
+    private boolean shouldSelfStop() {
+        return root || !modifiers.waitForParentEnd();
     }
 
     private void applyFrame(PlayerStateFrame frame) {
@@ -122,6 +173,6 @@ public final class PlaybackSession {
 
     private static Vector blockCenter(Vector pos) { return new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5); }
     private static Vector blockCorner(Vector pos) { return new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ())); }
-    private static long secondsToTicks(double seconds) { return Math.max(0L, (long) Math.ceil(seconds * 20.0)); }
+    private static long secondsToTicks(double seconds) { return !Double.isFinite(seconds) || seconds <= 0.0 ? 0L : Math.min(Integer.MAX_VALUE, (long) Math.ceil(seconds * 20.0)); }
     private static World findWorld(String worldKey, World fallback) { for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world; return fallback; }
 }

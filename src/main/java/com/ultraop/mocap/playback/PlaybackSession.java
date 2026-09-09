@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.util.List;
 import java.util.UUID;
@@ -36,7 +37,6 @@ public final class PlaybackSession {
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
         this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
         if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
-
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
@@ -96,41 +96,32 @@ public final class PlaybackSession {
 
     private Location transform(Location source) { return transformer.transform(source); }
 
-    private org.bukkit.util.Vector calculateRecordingCenter() {
-        if (frames.isEmpty()) return new org.bukkit.util.Vector(0, 0, 0);
+    private Vector calculateRecordingCenter() {
+        if (frames.isEmpty()) return new Vector(0, 0, 0);
         PlayerStateFrame start = frames.get(0);
-        org.bukkit.util.Vector pos = new org.bukkit.util.Vector(start.x(), start.y(), start.z());
+        Vector pos = new Vector(start.x(), start.y(), start.z());
         PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig();
-        org.bukkit.util.Vector center = switch (config.recordingCenter()) {
+        Vector center = switch (config.recordingCenter()) {
             case ACTUAL -> pos.clone();
             case BLOCK_CENTER -> blockCenter(pos);
             case BLOCK_CORNER -> blockCorner(pos);
             case AUTO -> autoCenter(pos);
         };
-        return center.add(config.centerOffsetX(), config.centerOffsetY(), config.centerOffsetZ());
+        return center.add(new Vector(config.centerOffsetX(), config.centerOffsetY(), config.centerOffsetZ()));
     }
 
-    private org.bukkit.util.Vector autoCenter(org.bukkit.util.Vector pos) {
+    private Vector autoCenter(Vector pos) {
         double scale = modifiers.sceneScale();
         if (scale == 1.0 || scale != Math.rint(scale)) {
-            org.bukkit.util.Vector center = blockCenter(pos);
-            org.bukkit.util.Vector corner = blockCorner(pos);
+            Vector center = blockCenter(pos);
+            Vector corner = blockCorner(pos);
             return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
         }
         return ((int) scale % 2 == 1) ? blockCenter(pos) : blockCorner(pos);
     }
 
-    private static org.bukkit.util.Vector blockCenter(org.bukkit.util.Vector pos) {
-        return new org.bukkit.util.Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
-    }
-
-    private static org.bukkit.util.Vector blockCorner(org.bukkit.util.Vector pos) {
-        return new org.bukkit.util.Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
-    }
-
+    private static Vector blockCenter(Vector pos) { return new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5); }
+    private static Vector blockCorner(Vector pos) { return new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ())); }
     private static long secondsToTicks(double seconds) { return Math.max(0L, (long) Math.ceil(seconds * 20.0)); }
-    private static World findWorld(String worldKey, World fallback) {
-        for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world;
-        return fallback;
-    }
+    private static World findWorld(String worldKey, World fallback) { for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world; return fallback; }
 }

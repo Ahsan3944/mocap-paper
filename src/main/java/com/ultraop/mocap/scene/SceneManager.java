@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -32,6 +31,10 @@ public final class SceneManager {
                     .map(p -> p.getFileName().toString().substring(0, p.getFileName().toString().length() - 5))
                     .sorted().toList();
         }
+    }
+
+    public List<String> getRecordingNames() {
+        return recordingManager.getSavedNames().stream().sorted().toList();
     }
 
     public boolean exists(String name) { return Files.isRegularFile(path(name)); }
@@ -71,7 +74,6 @@ public final class SceneManager {
         return true;
     }
 
-    /** Resolve a scene element as a saved recording. Nested scene resolution is deliberately deferred to ScenePlayback. */
     public RecordingSession resolveRecording(SceneElement element) {
         return recordingManager.getSaved(element.name());
     }

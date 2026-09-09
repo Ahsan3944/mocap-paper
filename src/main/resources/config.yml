@@ -1,0 +1,3 @@
+recording:
+  on_death: end_recording
+  on_change_dimension: end_recording

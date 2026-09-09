@@ -33,7 +33,9 @@ public final class PlaybackSession {
 
     public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null, true); }
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null, true); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) { this(recording, viewer, modifiers, parentTransformer, false); }
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) {
+        this(recording, viewer, modifiers, parentTransformer, false);
+    }
 
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers,
                            PositionTransformer parentTransformer, boolean root) {
@@ -143,7 +145,7 @@ public final class PlaybackSession {
             Property property = MineSkinSkins.getProperty(skin.path());
             if (property != null) {
                 GameProfile profile = new GameProfile(UUID.randomUUID(), modifiers.playerName() == null ? "MoCap" : modifiers.playerName());
-                profile.getProperties().put("textures", property);
+                profile.properties().put("textures", property);
                 return profile;
             }
         }

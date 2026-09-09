@@ -19,6 +19,17 @@ public final class PositionTransformer {
         return transformPos(point.clone(), null);
     }
 
+    /** Transforms a block-space position and applies the configured rounding policy. */
+    public Vector transformBlockPosition(Vector point) {
+        Vector transformed = transformPos(point.clone(), null);
+        if (modifiers.transformationConfig().roundBlockPos()) {
+            transformed.setX(Math.round(transformed.getX()));
+            transformed.setY(Math.round(transformed.getY()));
+            transformed.setZ(Math.round(transformed.getZ()));
+        }
+        return transformed;
+    }
+
     private Vector transformPos(Vector point, Vector childCenter) {
         if (childCenter == null && center == null) throw new IllegalStateException("Both childCenter and center are null");
         Vector centerToUse = center != null ? center.clone() : childCenter.clone();

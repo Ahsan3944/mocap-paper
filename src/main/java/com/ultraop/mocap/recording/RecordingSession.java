@@ -25,6 +25,7 @@ public final class RecordingSession {
     private final Instant startedAt;
     private final List<PlayerStateFrame> frames;
     private final Map<UUID, List<EntityStateFrame>> entityFrames;
+    private final List<BlockActionFrame> blockActions;
     private final Map<UUID, Integer> trackedLastSeenTick;
     private String instantSaveName;
     private long nextTick;
@@ -32,12 +33,12 @@ public final class RecordingSession {
 
     public RecordingSession(Player player) {
         this(UUID.randomUUID(), player.getUniqueId(), player.getName(), Instant.now(), null,
-                new ArrayList<>(), new LinkedHashMap<>());
+                new ArrayList<>(), new LinkedHashMap<>(), new ArrayList<>());
     }
 
     private RecordingSession(UUID id, UUID sourcePlayerId, String sourcePlayerName,
                              Instant startedAt, Instant stoppedAt, List<PlayerStateFrame> frames,
-                             Map<UUID, List<EntityStateFrame>> entityFrames) {
+                             Map<UUID, List<EntityStateFrame>> entityFrames, List<BlockActionFrame> blockActions) {
         this.id = id;
         this.sourcePlayerId = sourcePlayerId;
         this.sourcePlayerName = sourcePlayerName;
@@ -46,6 +47,7 @@ public final class RecordingSession {
         this.frames = new ArrayList<>(frames);
         this.entityFrames = new LinkedHashMap<>();
         entityFrames.forEach((uuid, values) -> this.entityFrames.put(uuid, new ArrayList<>(values)));
+        this.blockActions = new ArrayList<>(blockActions);
         this.trackedLastSeenTick = new LinkedHashMap<>();
         this.entityFrames.forEach((uuid, values) -> {
             if (!values.isEmpty()) this.trackedLastSeenTick.put(uuid, Math.toIntExact(values.get(values.size() - 1).tick()));
@@ -55,13 +57,19 @@ public final class RecordingSession {
 
     static RecordingSession loaded(UUID id, UUID sourcePlayerId, String sourcePlayerName,
                                    Instant startedAt, Instant stoppedAt, List<PlayerStateFrame> frames) {
-        return new RecordingSession(id, sourcePlayerId, sourcePlayerName, startedAt, stoppedAt, frames, Map.of());
+        return new RecordingSession(id, sourcePlayerId, sourcePlayerName, startedAt, stoppedAt, frames, Map.of(), List.of());
     }
 
     static RecordingSession loaded(UUID id, UUID sourcePlayerId, String sourcePlayerName,
                                    Instant startedAt, Instant stoppedAt, List<PlayerStateFrame> frames,
                                    Map<UUID, List<EntityStateFrame>> entityFrames) {
-        return new RecordingSession(id, sourcePlayerId, sourcePlayerName, startedAt, stoppedAt, frames, entityFrames);
+        return new RecordingSession(id, sourcePlayerId, sourcePlayerName, startedAt, stoppedAt, frames, entityFrames, List.of());
+    }
+
+    static RecordingSession loaded(UUID id, UUID sourcePlayerId, String sourcePlayerName,
+                                   Instant startedAt, Instant stoppedAt, List<PlayerStateFrame> frames,
+                                   Map<UUID, List<EntityStateFrame>> entityFrames, List<BlockActionFrame> blockActions) {
+        return new RecordingSession(id, sourcePlayerId, sourcePlayerName, startedAt, stoppedAt, frames, entityFrames, blockActions);
     }
 
     public UUID getId() { return id; }
@@ -76,6 +84,7 @@ public final class RecordingSession {
         entityFrames.forEach((uuid, values) -> copy.put(uuid, Collections.unmodifiableList(values)));
         return Collections.unmodifiableMap(copy);
     }
+    public List<BlockActionFrame> getBlockActions() { return Collections.unmodifiableList(blockActions); }
     public String getInstantSaveName() { return instantSaveName; }
     public void setInstantSaveName(String instantSaveName) { this.instantSaveName = instantSaveName; }
 
@@ -84,6 +93,12 @@ public final class RecordingSession {
         trackEntities(player);
         nextTick++;
     }
+
+    public void recordBlockAction(BlockActionFrame action) {
+        if (action != null) blockActions.add(action);
+    }
+
+    public long currentTick() { return Math.max(0L, nextTick - 1L); }
 
     private void trackEntities(Player player) {
         double maxDistanceSquared = ENTITY_TRACKING_DISTANCE * ENTITY_TRACKING_DISTANCE;
@@ -101,9 +116,6 @@ public final class RecordingSession {
                     .add(EntityStateFrame.capture(entity, nextTick));
             trackedLastSeenTick.put(entityId, Math.toIntExact(nextTick));
         }
-
-        // Keep historical frames for entities that disappeared from tracking range. Their last
-        // frame is the point at which playback can later remove the actor.
         trackedLastSeenTick.keySet().removeIf(uuid -> !seenThisTick.contains(uuid));
     }
 

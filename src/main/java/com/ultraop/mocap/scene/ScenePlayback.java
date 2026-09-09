@@ -160,4 +160,9 @@ public final class ScenePlayback {
     public boolean isStopped() { return stopped; }
     public boolean isFinished() { return finished; }
     public UUID getId() { return id; }
+
+    private static int secondsToTicks(double seconds) {
+        if (!Double.isFinite(seconds) || seconds <= 0.0) return 0;
+        return (int) Math.min(Integer.MAX_VALUE, Math.ceil(seconds * 20.0));
+    }
 }

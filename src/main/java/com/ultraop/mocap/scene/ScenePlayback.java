@@ -203,6 +203,11 @@ public final class ScenePlayback {
             waitTicks--;
             return;
         }
+        if (finished) {
+            if (modifiers.loop()) restart();
+            else if (root || !modifiers.waitForParentEnd()) stop();
+            return;
+        }
 
         boolean inactive = true;
         boolean allStopped = true;
@@ -213,7 +218,7 @@ public final class ScenePlayback {
         }
         for (ScenePlayback child : new ArrayList<>(children)) {
             child.tick();
-            if (!child.isFinished()) inactive = false;
+            if (child.isActive()) inactive = false;
             if (!child.isStopped()) allStopped = false;
         }
 
@@ -263,5 +268,6 @@ public final class ScenePlayback {
 
     public boolean isStopped() { return stopped; }
     public boolean isFinished() { return finished; }
+    public boolean isActive() { return !stopped && (!finished || modifiers.loop() || !modifiers.waitForParentEnd()); }
     public UUID getId() { return id; }
 }

@@ -4,6 +4,7 @@ import com.ultraop.mocap.command.MoCapCommand;
 import com.ultraop.mocap.command.ParityMoCapCommand;
 import com.ultraop.mocap.command.RootMoCapCommand;
 import com.ultraop.mocap.playback.PlaybackManager;
+import com.ultraop.mocap.recording.RecordingBlockListener;
 import com.ultraop.mocap.recording.RecordingManager;
 import com.ultraop.mocap.scene.SceneManager;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -22,6 +23,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
     public void onEnable() {
         this.recordingManager = new RecordingManager(this);
         this.recordingManager.start();
+        getServer().getPluginManager().registerEvents(new RecordingBlockListener(recordingManager), this);
         this.sceneManager = new SceneManager(this, recordingManager);
         try {
             this.sceneManager.start();

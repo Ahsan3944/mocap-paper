@@ -3,7 +3,6 @@ package com.ultraop.mocap.playback;
 import com.mojang.authlib.GameProfile; import com.mojang.authlib.properties.Property;
 import com.ultraop.mocap.recording.BlockActionFrame; import com.ultraop.mocap.recording.ChatMessageFrame; import com.ultraop.mocap.recording.EntityStateFrame; import com.ultraop.mocap.recording.PlayerStateFrame; import com.ultraop.mocap.recording.RecordingSession;
 import net.kyori.adventure.text.Component; import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
-import com.ultraop.mocap.recording.ChatMessageFrame;
 import org.bukkit.Bukkit; import org.bukkit.Location; import org.bukkit.World; import org.bukkit.block.data.BlockData; import org.bukkit.craftbukkit.entity.CraftPlayer; import org.bukkit.entity.Entity; import org.bukkit.entity.EntityType; import org.bukkit.entity.Player; import org.bukkit.util.Vector;
 import java.util.LinkedHashMap; import java.util.List; import java.util.Map; import java.util.UUID;
 

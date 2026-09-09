@@ -1,5 +1,7 @@
 package com.ultraop.mocap.command;
 
+import com.ultraop.mocap.playback.PlaybackManager;
+import com.ultraop.mocap.recording.RecordingManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -14,15 +16,16 @@ public final class SettingsCommand {
             "assign_dimension", "dimension_source", "start_instantly", "assign_profile", "chat_recording",
             "chat_playback", "invulnerable_playback", "hit_range", "use_authlib_services", "player_name_handling"
     );
-    private final JavaPlugin plugin;
-    public SettingsCommand(JavaPlugin plugin) { this.plugin = plugin; }
-    public boolean execute(CommandSender sender, String[] args) {
-        if (args.length == 1 || args[1].equalsIgnoreCase("list")) { list(sender); return true; }
-        if (args.length < 3) { usage(sender); return true; }
+    private final JavaPlugin plugin; private final RecordingManager recordingManager; private final PlaybackManager playbackManager;
+    public SettingsCommand(JavaPlugin plugin,RecordingManager recordingManager,PlaybackManager playbackManager){this.plugin=plugin;this.recordingManager=recordingManager;this.playbackManager=playbackManager;}
+    public boolean execute(CommandSender sender,String[] args){
+        if(args.length==1||args[1].equalsIgnoreCase("list")){list(sender);return true;}
+        if(args.length<3){usage(sender);return true;}
         String key=args[1].toLowerCase(Locale.ROOT),value=args[2];
         if(!NAMES.contains(key)){sender.sendMessage(ChatColor.RED+"Unknown setting: "+args[1]);return true;}
         if(!valid(key,value)){sender.sendMessage(ChatColor.RED+"Invalid value for "+key+".");return true;}
-        plugin.getConfig().set("settings."+key,parse(key,value));plugin.saveConfig();sender.sendMessage(ChatColor.GREEN+"Setting updated: "+key+" = "+plugin.getConfig().get("settings."+key));return true;
+        plugin.getConfig().set("settings."+key,parse(key,value));plugin.saveConfig();recordingManager.reloadSettings();playbackManager.reloadSettings();
+        sender.sendMessage(ChatColor.GREEN+"Setting updated: "+key+" = "+plugin.getConfig().get("settings."+key));return true;
     }
     private void list(CommandSender sender){sender.sendMessage(ChatColor.GOLD+"MoCap settings:");for(String key:NAMES)sender.sendMessage(ChatColor.GRAY+"  "+key+" = "+plugin.getConfig().get("settings."+key,defaultValue(key)));}
     private void usage(CommandSender sender){sender.sendMessage(ChatColor.YELLOW+"/mocap settings <list|setting value>");}
@@ -31,6 +34,6 @@ public final class SettingsCommand {
     private static boolean number(String v){try{double n=Double.parseDouble(v);return Double.isFinite(n)&&n>=0;}catch(NumberFormatException e){return false;}}
     private static Object parse(String key,String value){if(key.equals("playback_speed")||key.equals("hit_range")||key.equals("entity_tracking_distance"))return Double.parseDouble(value);if(boolSetting(key))return Boolean.parseBoolean(value);return value;}
     private static boolean boolSetting(String k){return List.of("block_actions_playback","block_initialization","recording_synchronization","prevent_tracking_played_entities","assign_dimension","start_instantly","chat_recording","chat_playback","invulnerable_playback","use_authlib_services").contains(k);}
-    private static Object defaultValue(String key){return switch(key){case "playback_speed"->1.0;case "hit_range"->0.0;case "entity_tracking_distance"->128.0;case "recording_synchronization","block_actions_playback","block_initialization","prevent_tracking_played_entities","assign_dimension","start_instantly","chat_recording","chat_playback","invulnerable_playback","use_authlib_services"->true;case "track_entities"->"@vehicles;@projectiles;@items";case "play_entities"->"*";case "on_death","on_change_dimension"->"end_recording";case "dimension_source"->"recording";case "assign_profile","player_name_handling"->"ignore_and_replace_casing";default->"";};}
+    private static Object defaultValue(String key){return switch(key){case "playback_speed"->1.0;case "hit_range","entity_tracking_distance"->key.equals("entity_tracking_distance")?128.0:0.0;case "recording_synchronization","block_actions_playback","block_initialization","prevent_tracking_played_entities","assign_dimension","start_instantly","chat_recording","chat_playback","invulnerable_playback","use_authlib_services"->true;case "track_entities"->"@vehicles;@projectiles;@items";case "play_entities"->"*";case "on_death","on_change_dimension"->"end_recording";case "dimension_source"->"recording";case "assign_profile","player_name_handling"->"ignore_and_replace_casing";default->"";};}
     public static List<String> names(){return NAMES;}
 }

@@ -1,7 +1,6 @@
 package com.ultraop.mocap.playback;
 
 import com.mojang.authlib.GameProfile;
-import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
@@ -86,7 +85,8 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     private static final class FakeConnectionHandler extends ServerGamePacketListenerImpl {
-        private static final Connection DUMMY_CONNECTION = new DummyConnection(PacketFlow.CLIENTBOUND);
+        private static final net.minecraft.network.Connection DUMMY_CONNECTION =
+                new DummyConnection(PacketFlow.CLIENTBOUND);
 
         private FakeConnectionHandler(MinecraftServer server, ServerPlayer player, GameProfile profile) {
             super(server, DUMMY_CONNECTION, player,
@@ -99,7 +99,7 @@ public final class FakePlayer extends ServerPlayer {
         @Override public void send(Packet<?> packet) { }
     }
 
-    private static final class DummyConnection extends Connection {
+    private static final class DummyConnection extends net.minecraft.network.Connection {
         private DummyConnection(PacketFlow packetFlow) {
             super(packetFlow);
         }

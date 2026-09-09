@@ -1,5 +1,6 @@
 plugins {
     java
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.19"
 }
 
 group = "com.ultraop"
@@ -15,7 +16,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    paperweight.paperDevBundle("1.21.11-R0.1-SNAPSHOT")
 }
 
 java {
@@ -27,7 +28,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
- tasks.processResources {
+tasks.processResources {
     filesMatching("plugin.yml") {
         expand("version" to project.version)
     }

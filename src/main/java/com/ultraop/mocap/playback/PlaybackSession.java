@@ -9,12 +9,12 @@ import com.ultraop.mocap.recording.RecordingSession;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
-import org.bukkit.block.data.BlockData;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,185 +23,59 @@ import java.util.UUID;
 
 /** Tick-driven playback timeline backed by server-side playback actors. */
 public final class PlaybackSession {
-    private final UUID id;
+    private final UUID id = UUID.randomUUID();
     private final RecordingSession recording;
     private final UUID viewerPlayerId;
     private final List<PlayerStateFrame> frames;
-    private final Map<UUID, List<EntityStateFrame>> entityFrames;
+    private final Map<UUID,List<EntityStateFrame>> entityFrames;
     private final List<BlockActionFrame> blockActions;
-    private final Map<UUID, EntityPlaybackActor> entityActors = new LinkedHashMap<>();
+    private final Map<UUID,EntityPlaybackActor> entityActors = new LinkedHashMap<>();
     private final FakePlayer fakePlayer;
     private final EntityPlaybackActor entityActor;
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
     private final boolean root;
-    private long tick;
-    private long waitTicks;
-    private long waitOnEnd;
-    private boolean paused;
-    private boolean finished;
-    private boolean stopped;
+    private long tick, waitTicks, waitOnEnd;
+    private boolean paused, finished, stopped;
 
-    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null, true); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null, true); }
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) { this(recording, viewer, modifiers, parentTransformer, false); }
-
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers,
-                           PositionTransformer parentTransformer, boolean root) {
-        this.id = UUID.randomUUID();
-        this.recording = recording;
-        this.viewerPlayerId = viewer.getUniqueId();
-        this.frames = recording.getFrames();
-        this.entityFrames = recording.getEntityFrames();
-        this.blockActions = recording.getBlockActions();
-        this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
-        this.root = root;
-        this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
-        if (frames.isEmpty()) {
-            this.fakePlayer = null; this.entityActor = null; this.stopped = true; return;
-        }
-        PlayerStateFrame first = frames.get(0);
-        World world = findWorld(first.worldKey(), viewer.getWorld());
-        Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
-        if (modifiers.playerAsEntity().enabled() && modifiers.playerAsEntity().entityType() != EntityType.PLAYER) {
-            Entity entity = world.spawnEntity(spawn, modifiers.playerAsEntity().entityType());
-            this.fakePlayer = null; this.entityActor = new EntityPlaybackActor(entity, modifiers.playerScale());
-        } else {
-            GameProfile profile = resolveProfile(viewer);
-            this.fakePlayer = FakePlayer.spawn(spawn, profile, this.modifiers.playerScale()); this.entityActor = null;
-        }
-        this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
-        if (waitTicks == 0) {
-            initializeBlocks();
-            applyFrame(first); applyEntityFrames(); applyRidingRelationships(first); applyBlockActions(0);
-        }
+    public PlaybackSession(RecordingSession r, Player v){this(r,v,PlaybackModifiers.DEFAULT,null,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m){this(r,v,m,null,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p){this(r,v,m,p,false);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p, boolean root){
+        recording=r; viewerPlayerId=v.getUniqueId(); frames=r.getFrames(); entityFrames=r.getEntityFrames(); blockActions=r.getBlockActions(); modifiers=m==null?PlaybackModifiers.DEFAULT:m; this.root=root;
+        transformer=new PositionTransformer(modifiers,p,calculateRecordingCenter());
+        if(frames.isEmpty()){fakePlayer=null;entityActor=null;stopped=true;return;}
+        PlayerStateFrame f=frames.get(0); World w=findWorld(f.worldKey(),v.getWorld()); Location spawn=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));
+        if(modifiers.playerAsEntity().enabled()&&modifiers.playerAsEntity().entityType()!=EntityType.PLAYER){Entity e=w.spawnEntity(spawn,modifiers.playerAsEntity().entityType());fakePlayer=null;entityActor=new EntityPlaybackActor(e,modifiers.playerScale());}
+        else{fakePlayer=FakePlayer.spawn(spawn,resolveProfile(v),modifiers.playerScale());entityActor=null;}
+        waitTicks=secondsToTicks(modifiers.startDelaySeconds()+modifiers.waitOnStartSeconds());
+        if(waitTicks==0){initializeBlocks();applyFrame(f);applyEntityFrames();applyRidingRelationships(f);applyBlockActions(0);}
     }
-
-    public UUID getId() { return id; }
-    public RecordingSession getRecording() { return recording; }
-    public long getTick() { return tick; }
-    public boolean isPaused() { return paused; }
-    public boolean isStopped() { return stopped; }
-    public boolean isFinished() { return finished; }
-    public boolean isActive() { return !stopped && (!finished || modifiers.loop() || !modifiers.waitForParentEnd()); }
-    public UUID getViewerPlayerId() { return viewerPlayerId; }
-    public FakePlayer getFakePlayer() { return fakePlayer; }
-    public EntityPlaybackActor getEntityActor() { return entityActor; }
-    public PlaybackModifiers getModifiers() { return modifiers; }
-    public PlayerStateFrame currentFrame() { return frames.isEmpty() || tick >= frames.size() ? null : frames.get((int) tick); }
-    public void pause() { if (!stopped) paused = true; }
-    public void resume() { if (!stopped) paused = false; }
-
-    public void stop() {
-        if (stopped) return; stopped = true; finished = true; ejectPlayer();
-        if (fakePlayer != null) fakePlayer.remove(); if (entityActor != null) entityActor.remove(); removeRecordedEntities();
-    }
-
-    public void advance() {
-        if (paused || stopped) return;
-        if (waitTicks > 0) { waitTicks--; return; }
-        if (finished) {
-            if (modifiers.loop()) restartLoop(); else if (shouldSelfStop()) stop(); return;
-        }
-        if (waitOnEnd > 0) {
-            waitOnEnd--; if (waitOnEnd == 0) { finished = true; if (modifiers.loop()) restartLoop(); else if (shouldSelfStop()) stop(); } return;
-        }
-        if (tick >= frames.size()) { finishOrWaitOnEnd(); return; }
-        PlayerStateFrame frame = frames.get((int) tick);
-        applyFrame(frame); applyEntityFrames(); applyRidingRelationships(frame); applyBlockActions(tick); tick++;
-    }
-
-    private void finishOrWaitOnEnd() {
-        long endTicks = secondsToTicks(modifiers.waitOnEndSeconds());
-        if (endTicks == 0) { finished = true; if (modifiers.loop()) restartLoop(); else if (shouldSelfStop()) stop(); }
-        else waitOnEnd = endTicks;
-    }
-
-    private void restartLoop() {
-        ejectPlayer(); removeRecordedEntities(); initializeBlocks(); tick = 0; waitTicks = 0; waitOnEnd = 0; finished = false;
-        if (!frames.isEmpty()) { applyFrame(frames.get(0)); applyEntityFrames(); applyRidingRelationships(frames.get(0)); applyBlockActions(0); }
-    }
-
-    private boolean shouldSelfStop() { return root || !modifiers.waitForParentEnd(); }
-
-    private void applyFrame(PlayerStateFrame frame) {
-        World world = findWorld(frame.worldKey(), currentWorld());
-        Location transformed = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
-        if (entityActor != null) entityActor.apply(frame, transformed);
-        else { fakePlayer.apply(frame); fakePlayer.getBukkitEntity().teleport(transformed); }
-    }
-
-    private void applyEntityFrames() {
-        for (Map.Entry<UUID, List<EntityStateFrame>> entry : entityFrames.entrySet()) {
-            List<EntityStateFrame> timeline = entry.getValue(); EntityStateFrame frame = frameAtTick(timeline, tick);
-            EntityPlaybackActor actor = entityActors.get(entry.getKey());
-            if (frame == null) { if (actor != null && lastTick(timeline) < tick) { eject(actor.entity()); actor.remove(); entityActors.remove(entry.getKey()); } continue; }
-            if (actor == null) {
-                EntityType type = EntityType.fromName(frame.entityType());
-                if (type == null || type == EntityType.PLAYER || !modifiers.entityFilter().matches(type)) continue;
-                World world = findWorld(frame.worldKey(), currentWorld()); Location location = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
-                try { Entity entity = world.spawnEntity(location, type); actor = new EntityPlaybackActor(entity, modifiers.sceneScale()); entityActors.put(entry.getKey(), actor); }
-                catch (IllegalArgumentException ignored) { continue; }
-            }
-            World world = findWorld(frame.worldKey(), actor.entity().getWorld());
-            actor.apply(frame, transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch())));
-        }
-    }
-
-    private void applyRidingRelationships(PlayerStateFrame playerFrame) {
-        Entity passenger = playbackPlayerEntity(); if (passenger == null) return;
-        UUID vehicleId = playerFrame.vehicleId();
-        if (vehicleId == null) eject(passenger); else { EntityPlaybackActor vehicle = entityActors.get(vehicleId); if (vehicle != null && vehicle.entity().isValid()) vehicle.entity().addPassenger(passenger); else eject(passenger); }
-        for (Map.Entry<UUID, List<EntityStateFrame>> entry : entityFrames.entrySet()) {
-            EntityPlaybackActor actor = entityActors.get(entry.getKey()); if (actor == null || !actor.entity().isValid()) continue;
-            EntityStateFrame frame = frameAtTick(entry.getValue(), tick); if (frame == null) continue;
-            UUID entityVehicleId = frame.vehicleId();
-            if (entityVehicleId == null) eject(actor.entity()); else { EntityPlaybackActor vehicle = entityActors.get(entityVehicleId); if (vehicle != null && vehicle.entity().isValid() && vehicle.entity() != actor.entity()) vehicle.entity().addPassenger(actor.entity()); else eject(actor.entity()); }
-        }
-    }
-
-    private void initializeBlocks() {
-        for (BlockActionFrame action : blockActions) {
-            Location location = transformedBlockLocation(action);
-            if (location == null) continue;
-            try { location.getBlock().setBlockData(Bukkit.createBlockData(action.beforeState()), false); }
-            catch (IllegalArgumentException ignored) { }
-        }
-    }
-
-    private void applyBlockActions(long targetTick) {
-        for (BlockActionFrame action : blockActions) {
-            if (action.tick() != targetTick) continue;
-            Location location = transformedBlockLocation(action);
-            if (location == null) continue;
-            if (action.action() == BlockActionFrame.Action.INTERACT) continue;
-            try {
-                BlockData data = Bukkit.createBlockData(action.afterState());
-                location.getBlock().setBlockData(data, false);
-            } catch (IllegalArgumentException ignored) { }
-        }
-    }
-
-    private Location transformedBlockLocation(BlockActionFrame action) {
-        World world = findWorld(action.worldKey(), currentWorld());
-        Vector transformed = transformer.transformBlockPosition(new Vector(action.x(), action.y(), action.z()));
-        return new Location(world, Math.floor(transformed.getX()), Math.floor(transformed.getY()), Math.floor(transformed.getZ()));
-    }
-
-    private Entity playbackPlayerEntity() { if (entityActor != null) return entityActor.entity(); return fakePlayer == null ? null : fakePlayer.getBukkitEntity(); }
-    private static void eject(Entity passenger) { Entity vehicle = passenger.getVehicle(); if (vehicle != null) vehicle.removePassenger(passenger); }
-    private void ejectPlayer() { Entity passenger = playbackPlayerEntity(); if (passenger != null) eject(passenger); }
-    private static long lastTick(List<EntityStateFrame> timeline) { return timeline.isEmpty() ? Long.MIN_VALUE : timeline.get(timeline.size() - 1).tick(); }
-    private static EntityStateFrame frameAtTick(List<EntityStateFrame> timeline, long targetTick) { int low=0,high=timeline.size()-1; while(low<=high){int mid=(low+high)>>>1;long value=timeline.get(mid).tick();if(value<targetTick)low=mid+1;else if(value>targetTick)high=mid-1;else return timeline.get(mid);}return null; }
-    private void removeRecordedEntities() { for(EntityPlaybackActor actor:entityActors.values()){eject(actor.entity());actor.remove();} entityActors.clear(); }
-    private World currentWorld() { if(fakePlayer!=null)return fakePlayer.getBukkitEntity().getWorld(); if(entityActor!=null)return entityActor.entity().getWorld(); return Bukkit.getWorlds().get(0); }
-    public Location resolveLocation(Player fallback) { PlayerStateFrame frame=currentFrame(); if(frame==null)return fallback.getLocation().clone(); World world=findWorld(frame.worldKey(),fallback.getWorld()); return transform(new Location(world,frame.x(),frame.y(),frame.z(),frame.yaw(),frame.pitch())); }
-    private Location transform(Location source) { return transformer.transform(source); }
-    private GameProfile resolveProfile(Player viewer) { PlayerSkin skin=modifiers.playerSkin(); if(skin.source()==PlayerSkin.Source.FROM_PLAYER){Player online=Bukkit.getPlayerExact(skin.path());if(online!=null)return((CraftPlayer)online).getProfile();} if(skin.source()==PlayerSkin.Source.FROM_MINESKIN){Property property=MineSkinSkins.getProperty(skin.path());if(property!=null){GameProfile profile=new GameProfile(UUID.randomUUID(),modifiers.playerName()==null?"MoCap":modifiers.playerName());profile.properties().put("textures",property);return profile;}} if(skin.source()==PlayerSkin.Source.DEFAULT&&modifiers.playerName()!=null){Player online=Bukkit.getPlayerExact(modifiers.playerName());if(online!=null)return((CraftPlayer)online).getProfile());} return((CraftPlayer)viewer).getProfile(); }
-    private Vector calculateRecordingCenter() { if(frames.isEmpty())return new Vector(0,0,0); PlayerStateFrame start=frames.get(0);Vector pos=new Vector(start.x(),start.y(),start.z());PlaybackModifiers.TransformationConfig config=modifiers.transformationConfig();Vector center=switch(config.recordingCenter()){case ACTUAL->pos.clone();case BLOCK_CENTER->blockCenter(pos);case BLOCK_CORNER->blockCorner(pos);case AUTO->autoCenter(pos);};return center.add(new Vector(config.centerOffsetX(),config.centerOffsetY(),config.centerOffsetZ())); }
-    private Vector autoCenter(Vector pos){double scale=modifiers.sceneScale();if(scale==1.0||scale!=Math.rint(scale)){Vector center=blockCenter(pos),corner=blockCorner(pos);return pos.distanceSquared(center)>pos.distanceSquared(corner)?corner:center;}return((int)scale%2==1)?blockCenter(pos):blockCorner(pos);}
-    private static Vector blockCenter(Vector pos){return new Vector(Math.round(pos.getX()-0.5)+0.5,Math.floor(pos.getY()),Math.round(pos.getZ()-0.5)+0.5);}
-    private static Vector blockCorner(Vector pos){return new Vector(Math.round(pos.getX()),Math.floor(pos.getY()),Math.round(pos.getZ()));}
-    private static long secondsToTicks(double seconds){return !Double.isFinite(seconds)||seconds<=0.0?0L:Math.min(Integer.MAX_VALUE,(long)Math.ceil(seconds*20.0));}
-    private static World findWorld(String worldKey,World fallback){for(World world:Bukkit.getWorlds())if(world.getKey().toString().equals(worldKey))return world;return fallback;}
+    public UUID getId(){return id;} public RecordingSession getRecording(){return recording;} public long getTick(){return tick;} public boolean isPaused(){return paused;} public boolean isStopped(){return stopped;} public boolean isFinished(){return finished;}
+    public boolean isActive(){return !stopped&&(!finished||modifiers.loop()||!modifiers.waitForParentEnd());} public UUID getViewerPlayerId(){return viewerPlayerId;} public FakePlayer getFakePlayer(){return fakePlayer;} public EntityPlaybackActor getEntityActor(){return entityActor;} public PlaybackModifiers getModifiers(){return modifiers;}
+    public PlayerStateFrame currentFrame(){return frames.isEmpty()||tick>=frames.size()?null:frames.get((int)tick);} public void pause(){if(!stopped)paused=true;} public void resume(){if(!stopped)paused=false;}
+    public void stop(){if(stopped)return;stopped=true;finished=true;ejectPlayer();if(fakePlayer!=null)fakePlayer.remove();if(entityActor!=null)entityActor.remove();removeRecordedEntities();}
+    public void advance(){if(paused||stopped)return;if(waitTicks>0){waitTicks--;return;}if(finished){if(modifiers.loop())restartLoop();else if(shouldSelfStop())stop();return;}if(waitOnEnd>0){waitOnEnd--;if(waitOnEnd==0){finished=true;if(modifiers.loop())restartLoop();else if(shouldSelfStop())stop();}return;}if(tick>=frames.size()){finishOrWaitOnEnd();return;}PlayerStateFrame f=frames.get((int)tick);applyFrame(f);applyEntityFrames();applyRidingRelationships(f);applyBlockActions(tick);tick++;}
+    private void finishOrWaitOnEnd(){long n=secondsToTicks(modifiers.waitOnEndSeconds());if(n==0){finished=true;if(modifiers.loop())restartLoop();else if(shouldSelfStop())stop();}else waitOnEnd=n;}
+    private void restartLoop(){ejectPlayer();removeRecordedEntities();initializeBlocks();tick=0;waitTicks=0;waitOnEnd=0;finished=false;if(!frames.isEmpty()){applyFrame(frames.get(0));applyEntityFrames();applyRidingRelationships(frames.get(0));applyBlockActions(0);}}
+    private boolean shouldSelfStop(){return root||!modifiers.waitForParentEnd();}
+    private void applyFrame(PlayerStateFrame f){World w=findWorld(f.worldKey(),currentWorld());Location l=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));if(entityActor!=null)entityActor.apply(f,l);else{fakePlayer.apply(f);fakePlayer.getBukkitEntity().teleport(l);}}
+    private void applyEntityFrames(){for(Map.Entry<UUID,List<EntityStateFrame>> e:entityFrames.entrySet()){List<EntityStateFrame> t=e.getValue();EntityStateFrame f=frameAtTick(t,tick);EntityPlaybackActor a=entityActors.get(e.getKey());if(f==null){if(a!=null&&lastTick(t)<tick){eject(a.entity());a.remove();entityActors.remove(e.getKey());}continue;}if(a==null){EntityType type=EntityType.fromName(f.entityType());if(type==null||type==EntityType.PLAYER||!modifiers.entityFilter().matches(type))continue;World w=findWorld(f.worldKey(),currentWorld());Location l=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));try{a=new EntityPlaybackActor(w.spawnEntity(l,type),modifiers.sceneScale());entityActors.put(e.getKey(),a);}catch(IllegalArgumentException ignored){continue;}}World w=findWorld(f.worldKey(),a.entity().getWorld());a.apply(f,transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch())));}}
+    private void applyRidingRelationships(PlayerStateFrame pf){Entity p=playbackPlayerEntity();if(p==null)return;UUID id=pf.vehicleId();if(id==null)eject(p);else{EntityPlaybackActor v=entityActors.get(id);if(v!=null&&v.entity().isValid())v.entity().addPassenger(p);else eject(p);}for(Map.Entry<UUID,List<EntityStateFrame>> e:entityFrames.entrySet()){EntityPlaybackActor a=entityActors.get(e.getKey());if(a==null||!a.entity().isValid())continue;EntityStateFrame f=frameAtTick(e.getValue(),tick);if(f==null)continue;UUID vid=f.vehicleId();if(vid==null)eject(a.entity());else{EntityPlaybackActor v=entityActors.get(vid);if(v!=null&&v.entity().isValid()&&v.entity()!=a.entity())v.entity().addPassenger(a.entity());else eject(a.entity());}}}
+    private void initializeBlocks(){for(BlockActionFrame a:blockActions){Location l=transformedBlockLocation(a);if(l==null)continue;try{l.getBlock().setBlockData(Bukkit.createBlockData(a.beforeState()),false);}catch(IllegalArgumentException ignored){}}}
+    private void applyBlockActions(long target){for(BlockActionFrame a:blockActions){if(a.tick()!=target||a.action()==BlockActionFrame.Action.INTERACT)continue;Location l=transformedBlockLocation(a);if(l==null)continue;try{BlockData d=Bukkit.createBlockData(a.afterState());l.getBlock().setBlockData(d,false);}catch(IllegalArgumentException ignored){}}}
+    private Location transformedBlockLocation(BlockActionFrame a){World w=findWorld(a.worldKey(),currentWorld());Vector p=transformer.transformBlockPosition(new Vector(a.x(),a.y(),a.z()));return new Location(w,Math.floor(p.getX()),Math.floor(p.getY()),Math.floor(p.getZ()));}
+    private Entity playbackPlayerEntity(){if(entityActor!=null)return entityActor.entity();return fakePlayer==null?null:fakePlayer.getBukkitEntity();} private static void eject(Entity p){Entity v=p.getVehicle();if(v!=null)v.removePassenger(p);} private void ejectPlayer(){Entity p=playbackPlayerEntity();if(p!=null)eject(p);}
+    private static long lastTick(List<EntityStateFrame> t){return t.isEmpty()?Long.MIN_VALUE:t.get(t.size()-1).tick();}
+    private static EntityStateFrame frameAtTick(List<EntityStateFrame> t,long target){int lo=0,hi=t.size()-1;while(lo<=hi){int m=(lo+hi)>>>1;long v=t.get(m).tick();if(v<target)lo=m+1;else if(v>target)hi=m-1;else return t.get(m);}return null;}
+    private void removeRecordedEntities(){for(EntityPlaybackActor a:entityActors.values()){eject(a.entity());a.remove();}entityActors.clear();}
+    private World currentWorld(){if(fakePlayer!=null)return fakePlayer.getBukkitEntity().getWorld();if(entityActor!=null)return entityActor.entity().getWorld();return Bukkit.getWorlds().get(0);}
+    public Location resolveLocation(Player fallback){PlayerStateFrame f=currentFrame();if(f==null)return fallback.getLocation().clone();World w=findWorld(f.worldKey(),fallback.getWorld());return transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));}
+    private Location transform(Location l){return transformer.transform(l);}
+    private GameProfile resolveProfile(Player viewer){PlayerSkin s=modifiers.playerSkin();if(s.source()==PlayerSkin.Source.FROM_PLAYER){Player p=Bukkit.getPlayerExact(s.path());if(p!=null)return((CraftPlayer)p).getProfile();}if(s.source()==PlayerSkin.Source.FROM_MINESKIN){Property p=MineSkinSkins.getProperty(s.path());if(p!=null){GameProfile g=new GameProfile(UUID.randomUUID(),modifiers.playerName()==null?"MoCap":modifiers.playerName());g.properties().put("textures",p);return g;}}if(s.source()==PlayerSkin.Source.DEFAULT&&modifiers.playerName()!=null){Player p=Bukkit.getPlayerExact(modifiers.playerName());if(p!=null)return((CraftPlayer)p).getProfile();}return((CraftPlayer)viewer).getProfile();}
+    private Vector calculateRecordingCenter(){if(frames.isEmpty())return new Vector(0,0,0);PlayerStateFrame s=frames.get(0);Vector p=new Vector(s.x(),s.y(),s.z());PlaybackModifiers.TransformationConfig c=modifiers.transformationConfig();Vector center=switch(c.recordingCenter()){case ACTUAL->p.clone();case BLOCK_CENTER->blockCenter(p);case BLOCK_CORNER->blockCorner(p);case AUTO->autoCenter(p);};return center.add(new Vector(c.centerOffsetX(),c.centerOffsetY(),c.centerOffsetZ()));}
+    private Vector autoCenter(Vector p){double s=modifiers.sceneScale();if(s==1.0||s!=Math.rint(s)){Vector c=blockCenter(p),q=blockCorner(p);return p.distanceSquared(c)>p.distanceSquared(q)?q:c;}return((int)s%2==1)?blockCenter(p):blockCorner(p);}
+    private static Vector blockCenter(Vector p){return new Vector(Math.round(p.getX()-0.5)+0.5,Math.floor(p.getY()),Math.round(p.getZ()-0.5)+0.5);} private static Vector blockCorner(Vector p){return new Vector(Math.round(p.getX()),Math.floor(p.getY()),Math.round(p.getZ()));}
+    private static long secondsToTicks(double s){return!Double.isFinite(s)||s<=0?0:Math.min(Integer.MAX_VALUE,(long)Math.ceil(s*20));}
+    private static World findWorld(String key,World fallback){for(World w:Bukkit.getWorlds())if(w.getKey().toString().equals(key))return w;return fallback;}
 }

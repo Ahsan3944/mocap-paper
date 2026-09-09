@@ -9,12 +9,13 @@ import java.util.*;
 
 /** In-memory recording produced by one recording session. */
 public final class RecordingSession {
+    public enum OnDeath { END_RECORDING, CONTINUE_SYNCED, SPLIT_RECORDING }
     private static final double ENTITY_TRACKING_DISTANCE = 128.0;
     private static final EntityFilter TRACK_ENTITIES = EntityFilter.DEFAULT_TRACK_ENTITIES;
     private final UUID id; private final UUID sourcePlayerId; private final String sourcePlayerName; private final Instant startedAt;
     private final List<PlayerStateFrame> frames; private final Map<UUID,List<EntityStateFrame>> entityFrames; private final List<BlockActionFrame> blockActions;
     private final Map<UUID,Integer> trackedLastSeenTick; private final Set<UUID> swingMainHand=new HashSet<>(); private final Set<UUID> swingOffHand=new HashSet<>(); private final Set<UUID> hurt=new HashSet<>();
-    private String instantSaveName; private long nextTick; private Instant stoppedAt;
+    private String instantSaveName; private long nextTick; private Instant stoppedAt; private OnDeath onDeath=OnDeath.END_RECORDING; private boolean died; private long diedTick=-1;
     public RecordingSession(Player player){this(UUID.randomUUID(),player.getUniqueId(),player.getName(),Instant.now(),null,new ArrayList<>(),new LinkedHashMap<>(),new ArrayList<>());}
     private RecordingSession(UUID id,UUID sourcePlayerId,String sourcePlayerName,Instant startedAt,Instant stoppedAt,List<PlayerStateFrame> frames,Map<UUID,List<EntityStateFrame>> entityFrames,List<BlockActionFrame> blockActions){
         this.id=id;this.sourcePlayerId=sourcePlayerId;this.sourcePlayerName=sourcePlayerName;this.startedAt=startedAt;this.stoppedAt=stoppedAt;this.frames=new ArrayList<>(frames);this.entityFrames=new LinkedHashMap<>();entityFrames.forEach((u,v)->this.entityFrames.put(u,new ArrayList<>(v)));this.blockActions=new ArrayList<>(blockActions);this.trackedLastSeenTick=new LinkedHashMap<>();this.entityFrames.forEach((u,v)->{if(!v.isEmpty())trackedLastSeenTick.put(u,Math.toIntExact(v.get(v.size()-1).tick()));});this.nextTick=frames.stream().mapToLong(PlayerStateFrame::tick).max().orElse(-1L)+1L;
@@ -24,11 +25,20 @@ public final class RecordingSession {
     static RecordingSession loaded(UUID id,UUID sourcePlayerId,String sourcePlayerName,Instant startedAt,Instant stoppedAt,List<PlayerStateFrame> frames,Map<UUID,List<EntityStateFrame>> entityFrames,List<BlockActionFrame> blockActions){return new RecordingSession(id,sourcePlayerId,sourcePlayerName,startedAt,stoppedAt,frames,entityFrames,blockActions);}
     public UUID getId(){return id;} public UUID getSourcePlayerId(){return sourcePlayerId;} public String getSourcePlayerName(){return sourcePlayerName;} public Instant getStartedAt(){return startedAt;} public Instant getStoppedAt(){return stoppedAt;}
     public long getDurationTicks(){return frames.size();} public List<PlayerStateFrame> getFrames(){return Collections.unmodifiableList(frames);} public Map<UUID,List<EntityStateFrame>> getEntityFrames(){Map<UUID,List<EntityStateFrame>> copy=new LinkedHashMap<>();entityFrames.forEach((u,v)->copy.put(u,Collections.unmodifiableList(v)));return Collections.unmodifiableMap(copy);} public List<BlockActionFrame> getBlockActions(){return Collections.unmodifiableList(blockActions);}
-    public String getInstantSaveName(){return instantSaveName;} public void setInstantSaveName(String n){instantSaveName=n;}
+    public String getInstantSaveName(){return instantSaveName;} public void setInstantSaveName(String n){instantSaveName=n;} public OnDeath getOnDeath(){return onDeath;} public void setOnDeath(OnDeath value){onDeath=value==null?OnDeath.END_RECORDING:value;}
     void markSwingMainHand(Player player){if(activeFor(player))swingMainHand.add(player.getUniqueId());} void markSwingOffHand(Player player){if(activeFor(player))swingOffHand.add(player.getUniqueId());}
     void markHurt(Entity entity){if(activeFor(entity))hurt.add(entity.getUniqueId());}
     private boolean activeFor(Entity e){return sourcePlayerId.equals(e.getUniqueId());}
-    void capture(Player player){UUID u=player.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(player,nextTick,main,off,wasHurt));trackEntities(player);nextTick++;}
+    void capture(Player player){
+        if(died){captureDeadTick(player);return;}
+        UUID u=player.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(player,nextTick,main,off,wasHurt));trackEntities(player);if(player.isDead()||player.isDeadly()){died=true;diedTick=nextTick;}
+        nextTick++;
+    }
+    private void captureDeadTick(Player player){
+        long diff=nextTick-diedTick;
+        if(onDeath==OnDeath.CONTINUE_SYNCED || diff<20){UUID u=player.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(player,nextTick,main,off,wasHurt));trackEntities(player);nextTick++;}
+        if(diff==20 && onDeath==OnDeath.END_RECORDING) stop();
+    }
     public void recordBlockAction(BlockActionFrame action){if(action!=null)blockActions.add(action);} public long currentTick(){return Math.max(0L,nextTick-1L);}
     private void trackEntities(Player player){double maxDistanceSquared=ENTITY_TRACKING_DISTANCE*ENTITY_TRACKING_DISTANCE;Set<UUID> seenThisTick=new HashSet<>();for(Entity entity:player.getWorld().getEntities()){
         if(entity instanceof Player||!entity.isValid()||entity.getUniqueId().equals(sourcePlayerId))continue;if(player.getLocation().distanceSquared(entity.getLocation())>maxDistanceSquared)continue;if(isPlaybackEntity(entity))continue;if(!TRACK_ENTITIES.matches(entity))continue;

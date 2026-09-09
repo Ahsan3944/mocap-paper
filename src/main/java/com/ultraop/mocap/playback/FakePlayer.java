@@ -10,6 +10,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
@@ -17,11 +19,7 @@ import org.bukkit.util.Vector;
 
 import java.util.UUID;
 
-/**
- * Server-side player entity used for MoCap playback without a real client connection.
- * The implementation intentionally keeps the network endpoint inert while allowing
- * the normal ServerPlayer entity lifecycle and clientbound entity tracking to work.
- */
+/** Server-side player entity used for MoCap playback without a real client connection. */
 public final class FakePlayer extends ServerPlayer {
     private static final ClientInformation DEFAULT_CLIENT_INFO = ClientInformation.createDefault();
 
@@ -32,7 +30,12 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     public static FakePlayer spawn(Location location, UUID uuid, String name) {
+        return spawn(location, uuid, name, 1.0);
+    }
+
+    public static FakePlayer spawn(Location location, UUID uuid, String name, double scale) {
         if (location.getWorld() == null) throw new IllegalArgumentException("Playback location has no world");
+        if (!Double.isFinite(scale) || scale <= 0.0) throw new IllegalArgumentException("Player scale must be finite and greater than zero");
         ServerLevel level = ((CraftWorld) location.getWorld()).getHandle();
         GameProfile profile = new GameProfile(uuid, name);
         FakePlayer player = new FakePlayer(level, profile);
@@ -40,7 +43,16 @@ public final class FakePlayer extends ServerPlayer {
         player.setYRot(location.getYaw());
         player.setXRot(location.getPitch());
         level.addNewPlayer(player);
+        player.setScale(scale);
         return player;
+    }
+
+    /** Apply the scale attribute without depending on a version-specific NMS attribute key. */
+    public void setScale(double scale) {
+        if (!Double.isFinite(scale) || scale <= 0.0) return;
+        Player player = getBukkitEntity();
+        AttributeInstance instance = player.getAttribute(Attribute.SCALE);
+        if (instance != null) instance.setBaseValue(scale);
     }
 
     public void apply(PlayerStateAdapter frame) {
@@ -66,12 +78,9 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     public void remove() {
-        if (!isRemoved()) {
-            remove(RemovalReason.DISCARDED);
-        }
+        if (!isRemoved()) remove(RemovalReason.DISCARDED);
     }
 
-    /** Small presentation-neutral frame contract to keep NMS isolated from recording storage. */
     public interface PlayerStateAdapter {
         double x(); double y(); double z();
         float yaw(); float pitch();
@@ -85,12 +94,10 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     private static final class FakeConnectionHandler extends ServerGamePacketListenerImpl {
-        private static final net.minecraft.network.Connection DUMMY_CONNECTION =
-                new DummyConnection(PacketFlow.CLIENTBOUND);
+        private static final net.minecraft.network.Connection DUMMY_CONNECTION = new DummyConnection(PacketFlow.CLIENTBOUND);
 
         private FakeConnectionHandler(MinecraftServer server, ServerPlayer player, GameProfile profile) {
-            super(server, DUMMY_CONNECTION, player,
-                    CommonListenerCookie.createInitial(profile, false));
+            super(server, DUMMY_CONNECTION, player, CommonListenerCookie.createInitial(profile, false));
         }
 
         @Override public boolean hasClientLoaded() { return true; }
@@ -100,8 +107,6 @@ public final class FakePlayer extends ServerPlayer {
     }
 
     private static final class DummyConnection extends net.minecraft.network.Connection {
-        private DummyConnection(PacketFlow packetFlow) {
-            super(packetFlow);
-        }
+        private DummyConnection(PacketFlow packetFlow) { super(packetFlow); }
     }
 }

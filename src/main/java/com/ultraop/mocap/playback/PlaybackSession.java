@@ -49,7 +49,7 @@ public final class PlaybackSession {
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
         String displayName = this.modifiers.playerName() == null ? recording.getSourcePlayerName() : this.modifiers.playerName();
-        this.fakePlayer = FakePlayer.spawn(spawn, recording.getSourcePlayerId(), displayName);
+        this.fakePlayer = FakePlayer.spawn(spawn, recording.getSourcePlayerId(), displayName, this.modifiers.playerScale());
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
         if (waitTicks == 0) applyFrame(first);
     }
@@ -77,18 +77,12 @@ public final class PlaybackSession {
 
     public void advance() {
         if (paused || stopped) return;
-
-        if (waitTicks > 0) {
-            waitTicks--;
-            return;
-        }
-
+        if (waitTicks > 0) { waitTicks--; return; }
         if (finished) {
             if (modifiers.loop()) restartLoop();
             else if (shouldSelfStop()) stop();
             return;
         }
-
         if (waitOnEnd > 0) {
             waitOnEnd--;
             if (waitOnEnd == 0) {
@@ -98,12 +92,7 @@ public final class PlaybackSession {
             }
             return;
         }
-
-        if (tick >= frames.size()) {
-            finishOrWaitOnEnd();
-            return;
-        }
-
+        if (tick >= frames.size()) { finishOrWaitOnEnd(); return; }
         applyFrame(frames.get((int) tick));
         tick++;
     }
@@ -114,9 +103,7 @@ public final class PlaybackSession {
             finished = true;
             if (modifiers.loop()) restartLoop();
             else if (shouldSelfStop()) stop();
-        } else {
-            waitOnEnd = endTicks;
-        }
+        } else waitOnEnd = endTicks;
     }
 
     private void restartLoop() {
@@ -127,9 +114,7 @@ public final class PlaybackSession {
         if (!frames.isEmpty()) applyFrame(frames.get(0));
     }
 
-    private boolean shouldSelfStop() {
-        return root || !modifiers.waitForParentEnd();
-    }
+    private boolean shouldSelfStop() { return root || !modifiers.waitForParentEnd(); }
 
     private void applyFrame(PlayerStateFrame frame) {
         fakePlayer.apply(frame);

@@ -23,7 +23,7 @@ public record PlaybackModifiers(
 
     public static final PlaybackModifiers DEFAULT = new PlaybackModifiers(
             null, null, false, null,
-            0.0, 0.0, 0.0, false, false, 0.0, Mirror.NONE,
+            0.0, 0.0, 0.0, true, false, 0.0, Mirror.NONE,
             1.0, 1.0, 0.0, 0.0, 0.0);
 
     public PlaybackModifiers withPlayerName(String value) { return copy(value, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ); }
@@ -40,6 +40,32 @@ public record PlaybackModifiers(
     public PlaybackModifiers withPlayerScale(double value) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, value, sceneScale, offsetX, offsetY, offsetZ); }
     public PlaybackModifiers withSceneScale(double value) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, value, offsetX, offsetY, offsetZ); }
     public PlaybackModifiers withOffset(double x, double y, double z) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, x, y, z); }
+
+    /**
+     * Mirrors the upstream inheritance contract: scalar player/display modifiers and time values
+     * inherit independently, while positional transformation composition is handled by the
+     * scene position transformer at runtime.
+     */
+    public PlaybackModifiers mergeWithParent(PlaybackModifiers parent) {
+        if (parent == null) return this;
+        return new PlaybackModifiers(
+                playerName != null ? playerName : parent.playerName,
+                playerSkin != null ? playerSkin : parent.playerSkin,
+                playerAsEntity || parent.playerAsEntity,
+                entityFilter != null ? entityFilter : parent.entityFilter,
+                startDelaySeconds + parent.startDelaySeconds,
+                waitOnStartSeconds + parent.waitOnStartSeconds,
+                waitOnEndSeconds,
+                waitForParentEnd,
+                loop,
+                rotationDegrees,
+                mirror,
+                playerScale * parent.playerScale,
+                sceneScale,
+                offsetX,
+                offsetY,
+                offsetZ);
+    }
 
     private static PlaybackModifiers copy(String playerName, String playerSkin, boolean playerAsEntity, String entityFilter,
                                           double startDelaySeconds, double waitOnStartSeconds, double waitOnEndSeconds,

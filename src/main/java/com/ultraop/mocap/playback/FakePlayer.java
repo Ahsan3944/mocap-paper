@@ -40,89 +40,40 @@ public final class FakePlayer extends ServerPlayer {
 
     public static FakePlayer spawn(Location l, GameProfile p, double s, boolean invulnerablePlayback) {
         if (l.getWorld() == null || p == null || !Double.isFinite(s) || s <= 0) throw new IllegalArgumentException("Invalid playback player");
-        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_authlib_services", false)) {
-            p = AuthlibProfileResolver.resolve(p);
-        }
+        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_authlib_services", false)) p = AuthlibProfileResolver.resolve(p);
         ServerLevel level = ((CraftWorld) l.getWorld()).getHandle();
         FakePlayer f = new FakePlayer(level, p, invulnerablePlayback);
-        f.setPos(l.getX(), l.getY(), l.getZ());
-        f.setYRot(l.getYaw());
-        f.setXRot(l.getPitch());
-        level.addNewPlayer(f);
-        f.setScale(s);
-        return f;
+        f.setPos(l.getX(), l.getY(), l.getZ()); f.setYRot(l.getYaw()); f.setXRot(l.getPitch());
+        level.addNewPlayer(f); f.setScale(s); f.applyPushSetting(); return f;
     }
 
-    public void setScale(double s) {
-        if (!Double.isFinite(s) || s <= 0) return;
-        AttributeInstance i = getBukkitEntity().getAttribute(Attribute.SCALE);
-        if (i != null) i.setBaseValue(s);
+    public void applyPushSetting() {
+        boolean canPush = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.can_push_entities", true);
+        getBukkitEntity().setCollidable(canPush);
     }
+
+    public void setScale(double s) { if (!Double.isFinite(s) || s <= 0) return; AttributeInstance i = getBukkitEntity().getAttribute(Attribute.SCALE); if (i != null) i.setBaseValue(s); }
 
     public void apply(PlayerStateAdapter f) {
-        Player p = getBukkitEntity();
-        p.teleport(new Location(p.getWorld(), f.x(), f.y(), f.z(), f.yaw(), f.pitch()));
-        p.setVelocity(new Vector(f.velocityX(), f.velocityY(), f.velocityZ()));
-        p.setSprinting(f.sprinting());
-        p.setSneaking(f.sneaking());
-        p.setSwimming(f.swimming());
-        p.setGliding(f.gliding());
-        p.setFlying(f.flying());
-        p.setPose(f.pose());
-        p.setFallDistance(f.fallDistance());
-        p.setInvisible(f.invisible());
-        p.setGlowing(f.glowing());
-        p.setInvulnerable(invulnerablePlayback || f.invulnerable());
-        p.setFireTicks(f.fireTicks());
-        if (p.getHealth() > 0 && f.health() > 0) p.setHealth(Math.min(p.getMaxHealth(), f.health()));
-        p.getInventory().setItemInMainHand(f.mainHand());
-        p.getInventory().setItemInOffHand(f.offHand());
-        p.getInventory().setArmorContents(f.armor());
-        if (f.swingMainHand()) p.swingMainHand();
-        if (f.swingOffHand()) p.swingOffHand();
-        if (f.hurt()) playHurt();
-        if (f.activeItemUse() && f.activeItemHand() != null) {
-            if (!replayingActiveItem) { p.startUsingItem(f.activeItemHand()); replayingActiveItem = true; }
-            if (f.activeItemRemainingTime() >= 0) p.setActiveItemRemainingTime(f.activeItemRemainingTime());
-        } else if (replayingActiveItem) {
-            p.clearActiveItem();
-            replayingActiveItem = false;
-        }
+        Player p = getBukkitEntity(); p.teleport(new Location(p.getWorld(), f.x(), f.y(), f.z(), f.yaw(), f.pitch())); p.setVelocity(new Vector(f.velocityX(), f.velocityY(), f.velocityZ()));
+        p.setSprinting(f.sprinting()); p.setSneaking(f.sneaking()); p.setSwimming(f.swimming()); p.setGliding(f.gliding()); p.setFlying(f.flying()); p.setPose(f.pose()); p.setFallDistance(f.fallDistance()); p.setInvisible(f.invisible()); p.setGlowing(f.glowing()); p.setInvulnerable(invulnerablePlayback || f.invulnerable()); p.setFireTicks(f.fireTicks());
+        if (p.getHealth() > 0 && f.health() > 0) p.setHealth(Math.min(p.getMaxHealth(), f.health())); p.getInventory().setItemInMainHand(f.mainHand()); p.getInventory().setItemInOffHand(f.offHand()); p.getInventory().setArmorContents(f.armor());
+        if (f.swingMainHand()) p.swingMainHand(); if (f.swingOffHand()) p.swingOffHand(); if (f.hurt()) playHurt();
+        if (f.activeItemUse() && f.activeItemHand() != null) { if (!replayingActiveItem) { p.startUsingItem(f.activeItemHand()); replayingActiveItem = true; } if (f.activeItemRemainingTime() >= 0) p.setActiveItemRemainingTime(f.activeItemRemainingTime()); } else if (replayingActiveItem) { p.clearActiveItem(); replayingActiveItem = false; }
     }
 
-    public void playHurt() {
-        Player p = getBukkitEntity();
-        if (!invulnerablePlayback) return;
-        boolean oldInv = p.isInvulnerable();
-        double max = p.getMaxHealth();
-        if (max <= 0) return;
-        try { p.setInvulnerable(false); p.setHealth(max); p.damage(1.0); p.setHealth(max); }
-        finally { p.setInvulnerable(oldInv); }
-    }
-
+    public void playHurt() { Player p = getBukkitEntity(); if (!invulnerablePlayback) return; boolean oldInv = p.isInvulnerable(); double max = p.getMaxHealth(); if (max <= 0) return; try { p.setInvulnerable(false); p.setHealth(max); p.damage(1.0); p.setHealth(max); } finally { p.setInvulnerable(oldInv); } }
     public void remove() { if (!isRemoved()) remove(RemovalReason.DISCARDED); }
 
     public interface PlayerStateAdapter {
-        double x(); double y(); double z(); float yaw(); float pitch();
-        double velocityX(); double velocityY(); double velocityZ();
-        boolean sprinting(); boolean sneaking(); boolean swimming(); boolean gliding(); boolean flying();
-        org.bukkit.entity.Pose pose(); float fallDistance(); boolean invisible(); boolean glowing(); boolean invulnerable();
-        int fireTicks(); double health(); org.bukkit.inventory.ItemStack mainHand(); org.bukkit.inventory.ItemStack offHand();
-        org.bukkit.inventory.ItemStack[] armor(); boolean swingMainHand(); boolean swingOffHand(); boolean hurt();
-        boolean activeItemUse(); EquipmentSlot activeItemHand(); org.bukkit.inventory.ItemStack activeItem();
-        int activeItemUsedTime(); int activeItemRemainingTime();
+        double x(); double y(); double z(); float yaw(); float pitch(); double velocityX(); double velocityY(); double velocityZ(); boolean sprinting(); boolean sneaking(); boolean swimming(); boolean gliding(); boolean flying();
+        org.bukkit.entity.Pose pose(); float fallDistance(); boolean invisible(); boolean glowing(); boolean invulnerable(); int fireTicks(); double health(); org.bukkit.inventory.ItemStack mainHand(); org.bukkit.inventory.ItemStack offHand(); org.bukkit.inventory.ItemStack[] armor(); boolean swingMainHand(); boolean swingOffHand(); boolean hurt(); boolean activeItemUse(); EquipmentSlot activeItemHand(); org.bukkit.inventory.ItemStack activeItem(); int activeItemUsedTime(); int activeItemRemainingTime();
     }
 
     private static final class FakeConnectionHandler extends ServerGamePacketListenerImpl {
         private static final net.minecraft.network.Connection DUMMY_CONNECTION = new DummyConnection(PacketFlow.CLIENTBOUND);
         private FakeConnectionHandler(MinecraftServer s, ServerPlayer p, GameProfile g) { super(s, DUMMY_CONNECTION, p, CommonListenerCookie.createInitial(g, false)); }
-        @Override public boolean hasClientLoaded() { return true; }
-        @Override public void tick() {}
-        @Override public void disconnect(net.minecraft.network.chat.Component m) {}
-        @Override public void send(Packet<?> p) {}
+        @Override public boolean hasClientLoaded() { return true; } @Override public void tick() {} @Override public void disconnect(net.minecraft.network.chat.Component m) {} @Override public void send(Packet<?> p) {}
     }
-
-    private static final class DummyConnection extends net.minecraft.network.Connection {
-        private DummyConnection(PacketFlow p) { super(p); }
-    }
+    private static final class DummyConnection extends net.minecraft.network.Connection { private DummyConnection(PacketFlow p) { super(p); } }
 }

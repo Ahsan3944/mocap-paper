@@ -9,93 +9,40 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
-
 import java.util.*;
 
 /** Owns standalone and scene playback timelines and advances them at the configured playback speed. */
 public final class PlaybackManager {
     public enum DimensionSource { ASSIGNED_OR_CURRENT, ASSIGNED_OR_OVERWORLD, CURRENT, OVERWORLD }
     public enum AssignProfile { NO, ONLY_NAME, FULL }
-
-    private final JavaPlugin plugin;
-    private final RecordingManager recordingManager;
-    private final Map<UUID, PlaybackSession> active = new LinkedHashMap<>();
-    private final Map<UUID, ScenePlayback> activeScenes = new LinkedHashMap<>();
-    private final Map<UUID, PlaybackModifiers> modifiers = new LinkedHashMap<>();
-    private final Map<UUID, Double> accumulators = new HashMap<>();
-    private SceneManager sceneManager;
-    private BukkitTask ticker;
-    private double playbackSpeed = 1.0;
-    private boolean blockActionsPlayback = true, blockInitialization = true, invulnerablePlayback = true,
-            preventTrackingPlayedEntities = true, chatPlayback = true, startAsRecorded = false;
-    private AssignProfile assignProfile = AssignProfile.NO;
-    private EntityFilter playEntities = EntityFilter.ALL;
-    private DimensionSource dimensionSource = DimensionSource.ASSIGNED_OR_CURRENT;
-    private String playerNameHandling = "ignore_casing";
-
-    public PlaybackManager(JavaPlugin plugin, RecordingManager recordingManager) {
-        this.plugin = plugin;
-        this.recordingManager = recordingManager;
-        loadSettings();
-    }
-
-    public void setSceneManager(SceneManager sceneManager) { this.sceneManager = sceneManager; }
-    public void reloadSettings() { loadSettings(); }
-
-    private void loadSettings() {
-        playbackSpeed = Math.max(0.0, plugin.getConfig().getDouble("settings.playback_speed", 1.0));
-        blockActionsPlayback = plugin.getConfig().getBoolean("settings.block_actions_playback", true);
-        blockInitialization = plugin.getConfig().getBoolean("settings.block_initialization", true);
-        invulnerablePlayback = plugin.getConfig().getBoolean("settings.invulnerable_playback", true);
-        chatPlayback = plugin.getConfig().getBoolean("settings.chat_playback", true);
-        startAsRecorded = plugin.getConfig().getBoolean("settings.start_as_recorded", false);
-        playEntities = new EntityFilter(plugin.getConfig().getString("settings.play_entities", EntityFilter.ALL.expression()));
-        preventTrackingPlayedEntities = plugin.getConfig().getBoolean("settings.prevent_tracking_played_entities", true);
-        try {
-            assignProfile = AssignProfile.valueOf(plugin.getConfig().getString("settings.assign_profile", "no").toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ignored) {
-            assignProfile = AssignProfile.NO;
-        }
-        playerNameHandling = plugin.getConfig().getString("settings.player_name_handling", "ignore_casing");
-        try {
-            dimensionSource = DimensionSource.valueOf(
-                    plugin.getConfig().getString("settings.dimension_source", "assigned_or_current")
-                            .toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ignored) {
-            dimensionSource = DimensionSource.ASSIGNED_OR_CURRENT;
-        }
-    }
-
-    private World resolvePlaybackWorld(RecordingSession recording, Player viewer) {
-        return switch (dimensionSource) {
+    private final JavaPlugin plugin; private final RecordingManager recordingManager;
+    private final Map<UUID,PlaybackSession> active=new LinkedHashMap<>(); private final Map<UUID,ScenePlayback> activeScenes=new LinkedHashMap<>(); private final Map<UUID,PlaybackModifiers> modifiers=new LinkedHashMap<>(); private final Map<UUID,Double> accumulators=new HashMap<>();
+    private SceneManager sceneManager; private BukkitTask ticker; private double playbackSpeed=1.0; private boolean blockActionsPlayback=true,blockInitialization=true,invulnerablePlayback=true,preventTrackingPlayedEntities=true,chatPlayback=true,startAsRecorded=false; private AssignProfile assignProfile=AssignProfile.NO; private EntityFilter playEntities=EntityFilter.ALL; private DimensionSource dimensionSource=DimensionSource.ASSIGNED_OR_CURRENT; private String playerNameHandling="ignore_casing";
+    public PlaybackManager(JavaPlugin plugin,RecordingManager recordingManager){this.plugin=plugin;this.recordingManager=recordingManager;loadSettings();}
+    public void setSceneManager(SceneManager sceneManager){this.sceneManager=sceneManager;} public void reloadSettings(){loadSettings();}
+    private void loadSettings(){playbackSpeed=Math.max(0.0,plugin.getConfig().getDouble("settings.playback_speed",1.0));blockActionsPlayback=plugin.getConfig().getBoolean("settings.block_actions_playback",true);blockInitialization=plugin.getConfig().getBoolean("settings.block_initialization",true);invulnerablePlayback=plugin.getConfig().getBoolean("settings.invulnerable_playback",true);chatPlayback=plugin.getConfig().getBoolean("settings.chat_playback",true);startAsRecorded=plugin.getConfig().getBoolean("settings.start_as_recorded",false);playEntities=new EntityFilter(plugin.getConfig().getString("settings.play_entities",EntityFilter.ALL.expression()));preventTrackingPlayedEntities=plugin.getConfig().getBoolean("settings.prevent_tracking_played_entities",true);try{assignProfile=AssignProfile.valueOf(plugin.getConfig().getString("settings.assign_profile","no").toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){assignProfile=AssignProfile.NO;}playerNameHandling=plugin.getConfig().getString("settings.player_name_handling","ignore_casing");try{dimensionSource=DimensionSource.valueOf(plugin.getConfig().getString("settings.dimension_source","assigned_or_current").toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){dimensionSource=DimensionSource.ASSIGNED_OR_CURRENT;}}
+    public boolean isBlockActionsPlayback(){return blockActionsPlayback;} public boolean isBlockInitialization(){return blockInitialization;} public boolean isInvulnerablePlayback(){return invulnerablePlayback;} public boolean isPlayEntities(){return playEntities.enabled();} public EntityFilter getPlayEntities(){return playEntities;} public boolean isPreventTrackingPlayedEntities(){return preventTrackingPlayedEntities;} public AssignProfile getAssignProfile(){return assignProfile;} public boolean isAssignProfile(){return assignProfile==AssignProfile.FULL;} public boolean isStartAsRecorded(){return startAsRecorded;} public String getPlayerNameHandling(){return playerNameHandling;} public boolean isChatPlayback(){return chatPlayback;} public DimensionSource getDimensionSource(){return dimensionSource;}
+    public void setBlockActionsPlayback(boolean v){blockActionsPlayback=v;plugin.getConfig().set("settings.block_actions_playback",v);plugin.saveConfig();} public void setBlockInitialization(boolean v){blockInitialization=v;plugin.getConfig().set("settings.block_initialization",v);plugin.saveConfig();}
+    public void start(){if(ticker==null)ticker=Bukkit.getScheduler().runTaskTimer(plugin,this::tick,1L,1L);}
+    public PlaybackSession play(UUID recordingId,Player viewer){RecordingSession r=recordingManager.get(recordingId);return r==null?null:play(r,viewer);} public PlaybackSession playSaved(String name,Player viewer){RecordingSession r=recordingManager.getSaved(name);return r==null?null:play(r,viewer);} public PlaybackSession play(RecordingSession r,Player v){return play(r,v,getModifiers(v));}
+    public PlaybackSession play(RecordingSession r,Player v,PlaybackModifiers m){PlaybackSession s=create(r,v,m,null,true);if(s==null)return null;active.put(s.getId(),s);accumulators.put(s.getId(),0.0);return s;}
+    public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);} public PlaybackSession create(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t,boolean root){World target=resolvePlaybackWorld(r,v);PlaybackModifiers effective=m==null?PlaybackModifiers.DEFAULT:m;if(startAsRecorded&&effective.playerName()==null&&assignProfile!=AssignProfile.NO)effective=effective.withPlayerName(r.getSourcePlayerName());boolean fullProfile=assignProfile==AssignProfile.FULL;PlaybackSession s=new PlaybackSession(r,v,effective,t,root,blockActionsPlayback,blockInitialization,playEntities,invulnerablePlayback,preventTrackingPlayedEntities,target,fullProfile,playerNameHandling,chatPlayback);return s.isStopped()?null:s;} public PlaybackSession createSubscene(RecordingSession r,Player v,PlaybackModifiers m,PositionTransformer t){return create(r,v,m,t,false);}
+    public ScenePlayback playScene(String n,Player v,PlaybackModifiers m){if(sceneManager==null)return null;ScenePlayback s=ScenePlayback.start(sceneManager,this,n,v,m);if(s==null)return null;activeScenes.put(s.getId(),s);return s;}
+    public PlaybackSession stop(UUID id){PlaybackSession s=active.remove(id);accumulators.remove(id);if(s!=null)s.stop();return s;} public ScenePlayback stopScene(UUID id){ScenePlayback s=activeScenes.remove(id);if(s!=null)s.stop();return s;}
+    public int stopAll(Player owner){int n=0;for(PlaybackSession s:new ArrayList<>(active.values()))if(owner==null||owner.getUniqueId().equals(s.getViewerPlayerId())){s.stop();active.remove(s.getId());accumulators.remove(s.getId());n++;}for(ScenePlayback s:new ArrayList<>(activeScenes.values())){s.stop();activeScenes.remove(s.getId());n++;}return n;}
+    public PlaybackSession get(UUID id){return active.get(id);} public ScenePlayback getScene(UUID id){return activeScenes.get(id);} public PlaybackModifiers getModifiers(Player p){return modifiers.getOrDefault(p.getUniqueId(),PlaybackModifiers.DEFAULT);} public void setModifiers(Player p,PlaybackModifiers v){modifiers.put(p.getUniqueId(),v);} public void resetModifiers(Player p){modifiers.remove(p.getUniqueId());}
+    public Collection<PlaybackSession> getActive(){return Collections.unmodifiableList(new ArrayList<>(active.values()));} public Collection<ScenePlayback> getActiveScenes(){return Collections.unmodifiableList(new ArrayList<>(activeScenes.values()));}
+    public void shutdown(){if(ticker!=null){ticker.cancel();ticker=null;}active.values().forEach(PlaybackSession::stop);activeScenes.values().forEach(ScenePlayback::stop);active.clear();activeScenes.clear();modifiers.clear();accumulators.clear();}
+    private World resolvePlaybackWorld(RecordingSession r,Player viewer){
+        return switch(dimensionSource){
             case CURRENT -> viewer.getWorld();
             case OVERWORLD -> overworldOr(viewer.getWorld());
-            case ASSIGNED_OR_OVERWORLD -> assignedOr(recording, overworldOr(viewer.getWorld()));
-            case ASSIGNED_OR_CURRENT -> assignedOr(recording, viewer.getWorld());
+            case ASSIGNED_OR_OVERWORLD -> assignedOr(r, overworldOr(viewer.getWorld()));
+            case ASSIGNED_OR_CURRENT -> assignedOr(r, viewer.getWorld());
         };
     }
-
-    private World assignedOr(RecordingSession recording, World fallback) {
-        String assigned = recording.getAssignedDimensionKey();
-        if (assigned == null || assigned.isBlank()) return fallback;
-        return findWorld(assigned, fallback);
-    }
-
-    private World overworldOr(World fallback) {
-        return Bukkit.getWorlds().stream()
-                .filter(w -> w.getEnvironment() == World.Environment.NORMAL)
-                .findFirst()
-                .orElse(fallback);
-    }
-
-    private World findWorld(String key, World fallback) {
-        World world = Bukkit.getWorld(key);
-        if (world != null) return world;
-        for (World candidate : Bukkit.getWorlds()) {
-            if (candidate.getKey().toString().equalsIgnoreCase(key)) return candidate;
-        }
-        return fallback;
-    }
-
-    // Remaining playback lifecycle methods are intentionally unchanged in the repository.
+    private World assignedOr(RecordingSession r, World fallback){String key=r.getAssignedDimensionKey();if(key!=null){World assigned=findWorld(key);if(assigned!=null)return assigned;}return fallback;}
+    private static World overworldOr(World fallback){World overworld=Bukkit.getWorlds().stream().filter(w->w.getEnvironment()==World.Environment.NORMAL).findFirst().orElse(null);return overworld==null?fallback:overworld;}
+    private static World findWorld(String key){for(World w:Bukkit.getWorlds())if(w.getKey().toString().equals(key))return w;return null;}
+    private void tick(){for(PlaybackSession s:new ArrayList<>(active.values())){UUID id=s.getId();double acc=accumulators.getOrDefault(id,0.0)+playbackSpeed;int steps=(int)Math.floor(acc);acc-=steps;accumulators.put(id,acc);for(int i=0;i<steps&&!s.isStopped();i++)s.advance();if(s.isStopped()){active.remove(id);accumulators.remove(id);}}for(ScenePlayback s:new ArrayList<>(activeScenes.values())){s.tick();if(s.isStopped())activeScenes.remove(s.getId());}}
 }

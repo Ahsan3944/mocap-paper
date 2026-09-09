@@ -1,10 +1,12 @@
 package com.ultraop.mocap.playback;
 
+import com.mojang.authlib.GameProfile;
 import com.ultraop.mocap.recording.PlayerStateFrame;
 import com.ultraop.mocap.recording.RecordingSession;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
@@ -48,8 +50,8 @@ public final class PlaybackSession {
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
-        String displayName = this.modifiers.playerName() == null ? recording.getSourcePlayerName() : this.modifiers.playerName();
-        this.fakePlayer = FakePlayer.spawn(spawn, recording.getSourcePlayerId(), displayName, this.modifiers.playerScale());
+        GameProfile profile = resolveProfile(viewer);
+        this.fakePlayer = FakePlayer.spawn(spawn, profile, this.modifiers.playerScale());
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
         if (waitTicks == 0) applyFrame(first);
     }
@@ -131,6 +133,19 @@ public final class PlaybackSession {
     }
 
     private Location transform(Location source) { return transformer.transform(source); }
+
+    private GameProfile resolveProfile(Player viewer) {
+        String playerName = modifiers.playerName();
+        if (modifiers.playerSkin().source() == PlayerSkin.Source.FROM_PLAYER) {
+            Player online = Bukkit.getPlayerExact(modifiers.playerSkin().path());
+            if (online != null) return ((CraftPlayer) online).getProfile();
+        }
+        if (modifiers.playerSkin().source() == PlayerSkin.Source.DEFAULT && playerName != null) {
+            Player online = Bukkit.getPlayerExact(playerName);
+            if (online != null) return ((CraftPlayer) online).getProfile();
+        }
+        return ((CraftPlayer) viewer).getProfile();
+    }
 
     private Vector calculateRecordingCenter() {
         if (frames.isEmpty()) return new Vector(0, 0, 0);

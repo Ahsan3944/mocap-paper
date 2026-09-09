@@ -6,7 +6,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
-import org.bukkit.util.Vector;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,16 +25,25 @@ public final class PlaybackSession {
     private boolean paused;
     private boolean stopped;
 
-    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT); }
+    public PlaybackSession(RecordingSession recording, Player viewer) {
+        this(recording, viewer, PlaybackModifiers.DEFAULT, null);
+    }
 
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) {
+        this(recording, viewer, modifiers, null);
+    }
+
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer transformer) {
         this.id = UUID.randomUUID();
         this.recording = recording;
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
-        this.transformer = new PositionTransformer(this.modifiers, null, calculateCenter(viewer));
+        this.transformer = transformer == null
+                ? new PositionTransformer(this.modifiers, null, calculateDefaultCenter())
+                : transformer;
         if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
+
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
@@ -54,7 +62,7 @@ public final class PlaybackSession {
     public UUID getViewerPlayerId() { return viewerPlayerId; }
     public FakePlayer getFakePlayer() { return fakePlayer; }
     public PlaybackModifiers getModifiers() { return modifiers; }
-    public PlayerStateFrame currentFrame() { if (frames.isEmpty() || tick >= frames.size()) return null; return frames.get((int) tick); }
+    public PlayerStateFrame currentFrame() { return frames.isEmpty() || tick >= frames.size() ? null : frames.get((int) tick); }
     public void pause() { if (!stopped) paused = true; }
     public void resume() { if (!stopped) paused = false; }
     public void stop() { if (stopped) return; stopped = true; if (fakePlayer != null) fakePlayer.remove(); }
@@ -62,7 +70,7 @@ public final class PlaybackSession {
     public void advance() {
         if (paused || stopped) return;
         if (waitTicks > 0) { waitTicks--; return; }
-        if (waitingForEnd) { waitingForEnd = false; if (modifiers.loop()) { restartLoop(); } else stop(); return; }
+        if (waitingForEnd) { waitingForEnd = false; if (modifiers.loop()) restartLoop(); else stop(); return; }
         if (tick >= frames.size()) {
             if (modifiers.loop()) { restartLoop(); return; }
             if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
@@ -95,27 +103,22 @@ public final class PlaybackSession {
 
     private Location transform(Location source) { return transformer.transform(source); }
 
-    private Vector calculateCenter(Player viewer) {
-        if (frames.isEmpty()) return viewer.getLocation().toVector();
+    private org.bukkit.util.Vector calculateDefaultCenter() {
+        if (frames.isEmpty()) return new org.bukkit.util.Vector(0, 0, 0);
         PlayerStateFrame start = frames.get(0);
-        Vector pos = new Vector(start.x(), start.y(), start.z());
-        return switch (recordingCenter()) {
-            case ACTUAL -> pos;
-            case BLOCK_CORNER -> new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
-            case BLOCK_CENTER -> new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
-            case AUTO -> chooseAutoCenter(pos);
-        };
-    }
-
-    private PlaybackCenter recordingCenter() { return PlaybackCenter.AUTO; }
-
-    private Vector chooseAutoCenter(Vector pos) {
-        Vector center = new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
-        Vector corner = new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
+        org.bukkit.util.Vector pos = new org.bukkit.util.Vector(start.x(), start.y(), start.z());
+        org.bukkit.util.Vector center = new org.bukkit.util.Vector(
+                Math.round(pos.getX() - 0.5) + 0.5,
+                Math.floor(pos.getY()),
+                Math.round(pos.getZ() - 0.5) + 0.5);
+        org.bukkit.util.Vector corner = new org.bukkit.util.Vector(
+                Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
         return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
     }
 
-    private enum PlaybackCenter { AUTO, BLOCK_CENTER, BLOCK_CORNER, ACTUAL }
     private static long secondsToTicks(double seconds) { return Math.max(0L, (long) Math.ceil(seconds * 20.0)); }
-    private static World findWorld(String worldKey, World fallback) { for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world; return fallback; }
+    private static World findWorld(String worldKey, World fallback) {
+        for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world;
+        return fallback;
+    }
 }

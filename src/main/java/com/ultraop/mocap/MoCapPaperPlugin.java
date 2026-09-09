@@ -22,7 +22,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new RecordingRespawnListener(recordingManager),this);
         sceneManager=new SceneManager(this,recordingManager); try{sceneManager.start();}catch(IOException e){getLogger().severe("Unable to initialize scene directory: "+e.getMessage());getServer().getPluginManager().disablePlugin(this);return;}
         playbackManager=new PlaybackManager(this,recordingManager); playbackManager.setSceneManager(sceneManager); playbackManager.start();
-        mocapCommand=new MoCapCommand(this,recordingManager,playbackManager); rootCommand=new RootMoCapCommand(mocapCommand,sceneManager,this); parityCommand=new ParityMoCapCommand(rootCommand,playbackManager);
+        mocapCommand=new MoCapCommand(this,recordingManager,playbackManager); rootCommand=new RootMoCapCommand(mocapCommand,sceneManager,this,recordingManager,playbackManager); parityCommand=new ParityMoCapCommand(rootCommand,playbackManager);
         if(getCommand("mocap")==null){getLogger().severe("The /mocap command is not registered in plugin.yml.");getServer().getPluginManager().disablePlugin(this);return;}
         getCommand("mocap").setExecutor(parityCommand); getCommand("mocap").setTabCompleter(parityCommand); getLogger().info("MoCap Paper initialized for Minecraft 1.21.11.");
     }

@@ -34,9 +34,19 @@ public final class RecordingSession {
             if(onChangeDimension==OnChangeDimension.SPLIT_RECORDING){stop();return true;}
         }
         if(died){captureDeadTick(p);return false;}
-        UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);if(p.isDead()){died=true;diedTick=nextTick;}nextTick++;lastWorldKey=currentWorld;return false;
+        UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);if(p.isDead()){died=true;diedTick=nextTick;}nextTick++;lastWorldKey=currentWorld;
+        if(died&&onDeath==OnDeath.END_RECORDING)stop();
+        return false;
     }
-    private void captureDeadTick(Player p){long diff=nextTick-diedTick;if(onDeath==OnDeath.CONTINUE_SYNCED||diff<20){UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);nextTick++;}if(diff==20&&onDeath==OnDeath.END_RECORDING)stop();}
+    private void captureDeadTick(Player p){long diff=nextTick-diedTick;if(onDeath==OnDeath.CONTINUE_SYNCED||diff<20){UUID u=p.getUniqueId();boolean main=swingMainHand.remove(u),off=swingOffHand.remove(u),wasHurt=hurt.remove(u);frames.add(PlayerStateFrame.capture(p,nextTick,main,off,wasHurt));trackEntities(p);nextTick++;}if(diff>=20&&onDeath==OnDeath.END_RECORDING)stop();}
+    /** Called after Bukkit's respawn event; true means the upstream SPLIT_RECORDING behavior was requested. */
+    boolean onRespawn(Player newPlayer){
+        if(onDeath!=OnDeath.SPLIT_RECORDING){
+            died=false; diedTick=-1; lastWorldKey=worldKey(newPlayer); return false;
+        }
+        stop(); return true;
+    }
+    public boolean isDead(){return died;}
     public void recordBlockAction(BlockActionFrame a){if(a!=null)blockActions.add(a);} public long currentTick(){return Math.max(0,nextTick-1);}
     private void trackEntities(Player p){double max=ENTITY_TRACKING_DISTANCE*ENTITY_TRACKING_DISTANCE;Set<UUID> seen=new HashSet<>();for(Entity e:p.getWorld().getEntities()){if(e instanceof Player||!e.isValid()||e.getUniqueId().equals(sourcePlayerId))continue;if(p.getLocation().distanceSquared(e.getLocation())>max||isPlaybackEntity(e)||!TRACK_ENTITIES.matches(e))continue;UUID id=e.getUniqueId();seen.add(id);boolean wasHurt=hurt.remove(id);entityFrames.computeIfAbsent(id,x->new ArrayList<>()).add(EntityStateFrame.capture(e,nextTick,wasHurt));trackedLastSeenTick.put(id,Math.toIntExact(nextTick));}trackedLastSeenTick.keySet().removeIf(u->!seen.contains(u));}
     private static boolean isPlaybackEntity(Entity e){return e.getScoreboardTags().stream().anyMatch(t->t.equals("mocap_entity")||t.equals("mocap:entity"));}

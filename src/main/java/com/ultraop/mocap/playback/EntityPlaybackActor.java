@@ -70,7 +70,6 @@ public final class EntityPlaybackActor {
             if (living.getEquipment() != null) {
                 living.getEquipment().setItemInMainHand(clone(frame.mainHand()));
                 living.getEquipment().setItemInOffHand(clone(frame.offHand()));
-                living.getHelmet();
                 living.getEquipment().setHelmet(clone(frame.armor()[3]));
                 living.getEquipment().setChestplate(clone(frame.armor()[2]));
                 living.getEquipment().setLeggings(clone(frame.armor()[1]));

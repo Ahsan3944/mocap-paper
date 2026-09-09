@@ -16,14 +16,14 @@ public final class PositionTransformer {
     }
 
     public Vector transform(Vector point) {
-        Vector childCenter = center == null ? point.clone() : center.clone();
-        Vector transformed = apply(point.clone(), childCenter);
-        return parent == null ? transformed : parent.transformWithChildCenter(transformed, childCenter);
+        return transformPos(point.clone(), null);
     }
 
-    private Vector transformWithChildCenter(Vector point, Vector childCenter) {
-        Vector transformed = apply(point.clone(), center == null ? childCenter : center);
-        return parent == null ? transformed : parent.transformWithChildCenter(transformed, center == null ? childCenter : center);
+    private Vector transformPos(Vector point, Vector childCenter) {
+        if (childCenter == null && center == null) throw new IllegalStateException("Both childCenter and center are null");
+        Vector centerToUse = center != null ? center.clone() : childCenter.clone();
+        Vector transformed = apply(point, centerToUse);
+        return parent == null ? transformed : parent.transformPos(transformed, centerToUse);
     }
 
     public float transformRotation(float rotation) {
@@ -32,7 +32,7 @@ public final class PositionTransformer {
     }
 
     private Vector apply(Vector point, Vector pivot) {
-        if (modifiers == PlaybackModifiers.DEFAULT) return point;
+        if (isTransformationDefault()) return point;
         double radians = Math.toRadians(modifiers.rotationDegrees());
         double dx = point.getX() - pivot.getX();
         double dz = point.getZ() - pivot.getZ();
@@ -49,6 +49,15 @@ public final class PositionTransformer {
         double ry = pivot.getY() + (point.getY() - pivot.getY()) * scale;
         rz = pivot.getZ() + (rz - pivot.getZ()) * scale;
         return new Vector(rx + modifiers.offsetX(), ry + modifiers.offsetY(), rz + modifiers.offsetZ());
+    }
+
+    private boolean isTransformationDefault() {
+        return modifiers.rotationDegrees() == 0.0
+                && modifiers.mirror() == PlaybackModifiers.Mirror.NONE
+                && modifiers.sceneScale() == 1.0
+                && modifiers.offsetX() == 0.0
+                && modifiers.offsetY() == 0.0
+                && modifiers.offsetZ() == 0.0;
     }
 
     private double applyRotation(double rotation) {

@@ -78,6 +78,7 @@ public final class PlaybackSession {
         if (waitTicks == 0) {
             applyFrame(first);
             applyEntityFrames();
+            applyRidingRelationships(first);
         }
     }
 
@@ -100,6 +101,7 @@ public final class PlaybackSession {
         if (stopped) return;
         stopped = true;
         finished = true;
+        ejectPlayer();
         if (fakePlayer != null) fakePlayer.remove();
         if (entityActor != null) entityActor.remove();
         removeRecordedEntities();
@@ -123,8 +125,10 @@ public final class PlaybackSession {
             return;
         }
         if (tick >= frames.size()) { finishOrWaitOnEnd(); return; }
-        applyFrame(frames.get((int) tick));
+        PlayerStateFrame frame = frames.get((int) tick);
+        applyFrame(frame);
         applyEntityFrames();
+        applyRidingRelationships(frame);
         tick++;
     }
 
@@ -138,6 +142,7 @@ public final class PlaybackSession {
     }
 
     private void restartLoop() {
+        ejectPlayer();
         removeRecordedEntities();
         tick = 0;
         waitTicks = 0;
@@ -146,6 +151,7 @@ public final class PlaybackSession {
         if (!frames.isEmpty()) {
             applyFrame(frames.get(0));
             applyEntityFrames();
+            applyRidingRelationships(frames.get(0));
         }
     }
 
@@ -167,9 +173,8 @@ public final class PlaybackSession {
             EntityStateFrame frame = frameAtTick(timeline, tick);
             EntityPlaybackActor actor = entityActors.get(entry.getKey());
             if (frame == null) {
-                // A tracked entity is absent from a tick when tracking stopped. Retain its
-                // historical frames but remove its playback actor once its last frame is passed.
                 if (actor != null && lastTick(timeline) < tick) {
+                    eject(actor.entity());
                     actor.remove();
                     entityActors.remove(entry.getKey());
                 }
@@ -195,6 +200,48 @@ public final class PlaybackSession {
         }
     }
 
+    private void applyRidingRelationships(PlayerStateFrame playerFrame) {
+        Entity passenger = playbackPlayerEntity();
+        if (passenger == null) return;
+        UUID vehicleId = playerFrame.vehicleId();
+        if (vehicleId == null) eject(passenger);
+        else {
+            EntityPlaybackActor vehicle = entityActors.get(vehicleId);
+            if (vehicle != null && vehicle.entity().isValid()) vehicle.entity().addPassenger(passenger);
+            else eject(passenger);
+        }
+
+        for (Map.Entry<UUID, List<EntityStateFrame>> entry : entityFrames.entrySet()) {
+            EntityPlaybackActor actor = entityActors.get(entry.getKey());
+            if (actor == null || !actor.entity().isValid()) continue;
+            EntityStateFrame frame = frameAtTick(entry.getValue(), tick);
+            if (frame == null) continue;
+            UUID entityVehicleId = frame.vehicleId();
+            if (entityVehicleId == null) eject(actor.entity());
+            else {
+                EntityPlaybackActor vehicle = entityActors.get(entityVehicleId);
+                if (vehicle != null && vehicle.entity().isValid() && vehicle.entity() != actor.entity())
+                    vehicle.entity().addPassenger(actor.entity());
+                else eject(actor.entity());
+            }
+        }
+    }
+
+    private Entity playbackPlayerEntity() {
+        if (entityActor != null) return entityActor.entity();
+        return fakePlayer == null ? null : fakePlayer.getBukkitEntity();
+    }
+
+    private static void eject(Entity passenger) {
+        Entity vehicle = passenger.getVehicle();
+        if (vehicle != null) vehicle.removePassenger(passenger);
+    }
+
+    private void ejectPlayer() {
+        Entity passenger = playbackPlayerEntity();
+        if (passenger != null) eject(passenger);
+    }
+
     private static long lastTick(List<EntityStateFrame> timeline) {
         return timeline.isEmpty() ? Long.MIN_VALUE : timeline.get(timeline.size() - 1).tick();
     }
@@ -212,7 +259,10 @@ public final class PlaybackSession {
     }
 
     private void removeRecordedEntities() {
-        for (EntityPlaybackActor actor : entityActors.values()) actor.remove();
+        for (EntityPlaybackActor actor : entityActors.values()) {
+            eject(actor.entity());
+            actor.remove();
+        }
         entityActors.clear();
     }
 
@@ -269,8 +319,7 @@ public final class PlaybackSession {
     private Vector autoCenter(Vector pos) {
         double scale = modifiers.sceneScale();
         if (scale == 1.0 || scale != Math.rint(scale)) {
-            Vector center = blockCenter(pos);
-            Vector corner = blockCorner(pos);
+            Vector center = blockCenter(pos); Vector corner = blockCorner(pos);
             return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
         }
         return ((int) scale % 2 == 1) ? blockCenter(pos) : blockCorner(pos);

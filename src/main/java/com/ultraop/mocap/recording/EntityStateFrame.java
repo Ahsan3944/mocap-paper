@@ -29,7 +29,8 @@ public record EntityStateFrame(
         double health,
         ItemStack mainHand,
         ItemStack offHand,
-        ItemStack[] armor
+        ItemStack[] armor,
+        UUID vehicleId
 ) {
     public static EntityStateFrame capture(Entity entity, long tick) {
         Location location = entity.getLocation();
@@ -39,19 +40,17 @@ public record EntityStateFrame(
                 cloneItem(equipment.getHelmet()), cloneItem(equipment.getChestplate()),
                 cloneItem(equipment.getLeggings()), cloneItem(equipment.getBoots())
         };
+        UUID vehicleId = entity.getVehicle() == null ? null : entity.getVehicle().getUniqueId();
 
         return new EntityStateFrame(
                 tick, entity.getUniqueId(), entity.getType().getKey().toString(),
                 location.getWorld().getKey().toString(), location.getX(), location.getY(), location.getZ(),
                 location.getYaw(), location.getPitch(), entity.getVelocity().getX(), entity.getVelocity().getY(),
                 entity.getVelocity().getZ(), entity.getFireTicks(), entity.isInvisible(), entity.isGlowing(),
-                living != null && living.isInvulnerable(),
-                living == null ? -1.0 : living.getHealth(),
+                living != null && living.isInvulnerable(), living == null ? -1.0 : living.getHealth(),
                 equipment == null ? null : cloneItem(equipment.getItemInMainHand()),
-                equipment == null ? null : cloneItem(equipment.getItemInOffHand()), armor);
+                equipment == null ? null : cloneItem(equipment.getItemInOffHand()), armor, vehicleId);
     }
 
-    private static ItemStack cloneItem(ItemStack item) {
-        return item == null ? null : item.clone();
-    }
+    private static ItemStack cloneItem(ItemStack item) { return item == null ? null : item.clone(); }
 }

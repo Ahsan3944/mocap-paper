@@ -34,6 +34,8 @@ public final class EntityPlaybackActor {
         entity.setGlowing(frame.glowing());
         entity.setInvisible(frame.invisible());
         if (entity instanceof LivingEntity living) {
+            living.setPose(frame.pose());
+            living.setFallDistance(frame.fallDistance());
             living.setInvulnerable(frame.invulnerable());
             if (frame.health() > 0.0) living.setHealth(Math.min(living.getMaxHealth(), frame.health()));
             if (living.getEquipment() != null) {
@@ -61,11 +63,14 @@ public final class EntityPlaybackActor {
         entity.setGlowing(frame.glowing());
         entity.setInvisible(frame.invisible());
         if (entity instanceof LivingEntity living) {
+            living.setPose(frame.pose());
+            living.setFallDistance(frame.fallDistance());
             living.setInvulnerable(frame.invulnerable());
             if (frame.health() > 0.0) living.setHealth(Math.min(living.getMaxHealth(), frame.health()));
             if (living.getEquipment() != null) {
                 living.getEquipment().setItemInMainHand(clone(frame.mainHand()));
                 living.getEquipment().setItemInOffHand(clone(frame.offHand()));
+                living.getHelmet();
                 living.getEquipment().setHelmet(clone(frame.armor()[3]));
                 living.getEquipment().setChestplate(clone(frame.armor()[2]));
                 living.getEquipment().setLeggings(clone(frame.armor()[1]));

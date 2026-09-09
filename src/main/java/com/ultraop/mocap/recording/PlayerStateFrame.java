@@ -7,13 +7,9 @@ import org.bukkit.entity.Pose;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Arrays;
+import java.util.UUID;
 
-/**
- * Immutable 20 TPS snapshot of the recorded player.
- *
- * Every mutable Bukkit value is copied at capture time so later player changes cannot
- * mutate an already-recorded frame.
- */
+/** Immutable 20 TPS snapshot of the recorded player. */
 public record PlayerStateFrame(
         long tick,
         String worldKey,
@@ -40,45 +36,26 @@ public record PlayerStateFrame(
         double health,
         ItemStack mainHand,
         ItemStack offHand,
-        ItemStack[] armor
+        ItemStack[] armor,
+        UUID vehicleId
 ) implements FakePlayer.PlayerStateAdapter {
     public static PlayerStateFrame capture(Player player, long tick) {
         Location location = player.getLocation();
         ItemStack[] armor = Arrays.stream(player.getInventory().getArmorContents())
                 .map(item -> item == null ? null : item.clone())
                 .toArray(ItemStack[]::new);
+        UUID vehicleId = player.getVehicle() == null ? null : player.getVehicle().getUniqueId();
 
         return new PlayerStateFrame(
-                tick,
-                location.getWorld().getKey().toString(),
-                location.getX(),
-                location.getY(),
-                location.getZ(),
-                location.getYaw(),
-                location.getPitch(),
-                player.getVelocity().getX(),
-                player.getVelocity().getY(),
-                player.getVelocity().getZ(),
-                player.isOnGround(),
-                player.isSprinting(),
-                player.isSneaking(),
-                player.isSwimming(),
-                player.isGliding(),
-                player.isFlying(),
-                player.getPose(),
-                player.getFallDistance(),
-                player.getFireTicks(),
-                player.isInvisible(),
-                player.isGlowing(),
-                player.isInvulnerable(),
-                player.getHealth(),
-                cloneItem(player.getInventory().getItemInMainHand()),
-                cloneItem(player.getInventory().getItemInOffHand()),
-                armor
+                tick, location.getWorld().getKey().toString(), location.getX(), location.getY(), location.getZ(),
+                location.getYaw(), location.getPitch(), player.getVelocity().getX(), player.getVelocity().getY(),
+                player.getVelocity().getZ(), player.isOnGround(), player.isSprinting(), player.isSneaking(),
+                player.isSwimming(), player.isGliding(), player.isFlying(), player.getPose(), player.getFallDistance(),
+                player.getFireTicks(), player.isInvisible(), player.isGlowing(), player.isInvulnerable(), player.getHealth(),
+                cloneItem(player.getInventory().getItemInMainHand()), cloneItem(player.getInventory().getItemInOffHand()), armor,
+                vehicleId
         );
     }
 
-    private static ItemStack cloneItem(ItemStack item) {
-        return item == null ? null : item.clone();
-    }
+    private static ItemStack cloneItem(ItemStack item) { return item == null ? null : item.clone(); }
 }

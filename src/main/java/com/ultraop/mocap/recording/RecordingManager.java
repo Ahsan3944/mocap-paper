@@ -1,5 +1,6 @@
 package com.ultraop.mocap.recording;
 
+import com.ultraop.mocap.playback.EntityFilter;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -15,13 +16,15 @@ public final class RecordingManager {
     private final Map<UUID,RecordingSession> active=new LinkedHashMap<>(), completed=new LinkedHashMap<>(); private final Map<String,RecordingSession> saved=new LinkedHashMap<>(); private BukkitTask ticker;
     private RecordingSession.OnDeath onDeath=RecordingSession.OnDeath.END_RECORDING;
     private OnChangeDimension onChangeDimension=OnChangeDimension.END_RECORDING;
+    private double entityTrackingDistance=128.0; private EntityFilter trackEntities=EntityFilter.DEFAULT_TRACK_ENTITIES;
     private final Map<UUID,RecordingSession> waitingForRespawn=new HashMap<>();
     public RecordingManager(JavaPlugin plugin){this.plugin=plugin;this.repository=new RecordingRepository(Path.of(plugin.getDataFolder().getPath(),"recordings"));}
     public void start(){if(ticker!=null)return;loadSettings();try{repository.initialize();saved.clear();saved.putAll(repository.loadAll());}catch(IOException e){plugin.getLogger().severe("Unable to load saved recordings: "+e.getMessage());}ticker=Bukkit.getScheduler().runTaskTimer(plugin,this::tick,1L,1L);}
-    private void loadSettings(){String death=plugin.getConfig().getString("recording.on_death",onDeath.name());String dimension=plugin.getConfig().getString("recording.on_change_dimension",onChangeDimension.name());try{onDeath=RecordingSession.OnDeath.valueOf(death.toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){onDeath=RecordingSession.OnDeath.END_RECORDING;}try{onChangeDimension=OnChangeDimension.valueOf(dimension.toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){onChangeDimension=OnChangeDimension.END_RECORDING;}}
+    private void loadSettings(){String death=plugin.getConfig().getString("recording.on_death",plugin.getConfig().getString("settings.on_death",onDeath.name()));String dimension=plugin.getConfig().getString("recording.on_change_dimension",plugin.getConfig().getString("settings.on_change_dimension",onChangeDimension.name()));try{onDeath=RecordingSession.OnDeath.valueOf(death.toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){onDeath=RecordingSession.OnDeath.END_RECORDING;}try{onChangeDimension=OnChangeDimension.valueOf(dimension.toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ignored){onChangeDimension=OnChangeDimension.END_RECORDING;}entityTrackingDistance=Math.max(0.0,plugin.getConfig().getDouble("settings.entity_tracking_distance",128.0));String expression=plugin.getConfig().getString("settings.track_entities",EntityFilter.DEFAULT_TRACK_ENTITIES.expression());trackEntities=new EntityFilter(expression);}
     public RecordingSession.OnDeath getOnDeath(){return onDeath;} public void setOnDeath(RecordingSession.OnDeath value){onDeath=value==null?RecordingSession.OnDeath.END_RECORDING:value;plugin.getConfig().set("recording.on_death",onDeath.name().toLowerCase(Locale.ROOT));plugin.saveConfig();}
-    public OnChangeDimension getOnChangeDimension(){return onChangeDimension;} public void setOnChangeDimension(OnChangeDimension value){onChangeDimension=value==null?OnChangeDimension.END_RECORDING:value;plugin.getConfig().set("recording.on_change_dimension",onChangeDimension.name().toLowerCase(Locale.ROOT));plugin.saveConfig();}
-    public RecordingSession startRecording(Player p){RecordingSession s=new RecordingSession(p);s.setOnDeath(onDeath);s.setOnChangeDimension(onChangeDimension);active.put(s.getId(),s);return s;} public RecordingSession startRecording(Player p,String name){RecordingSession s=startRecording(p);s.setInstantSaveName(name);return s;}
+    public OnChangeDimension getOnChangeDimension(){return onChangeDimension;} public void setOnChangeDimension(OnChangeDimension value){onChangeDimension=value==null?OnChangeDimension.END_RECORDING:value;plugin.getConfig().set("recording.on_change_dimension",value.name().toLowerCase(Locale.ROOT));plugin.saveConfig();}
+    public double getEntityTrackingDistance(){return entityTrackingDistance;} public EntityFilter getTrackEntities(){return trackEntities;}
+    public RecordingSession startRecording(Player p){RecordingSession s=new RecordingSession(p,entityTrackingDistance,trackEntities);s.setOnDeath(onDeath);s.setOnChangeDimension(onChangeDimension);active.put(s.getId(),s);return s;} public RecordingSession startRecording(Player p,String name){RecordingSession s=startRecording(p);s.setInstantSaveName(name);return s;}
     public void markSwing(Player p,boolean offHand){for(RecordingSession s:active.values())if(s.getSourcePlayerId().equals(p.getUniqueId())){if(offHand)s.markSwingOffHand(p);else s.markSwingMainHand(p);}}
     public void markHurt(Entity entity){for(RecordingSession s:active.values())s.markHurt(entity);}
     public RecordingSession stopRecording(UUID id){RecordingSession s=active.remove(id);if(s==null)return null;s.stop();waitingForRespawn.remove(s.getSourcePlayerId());complete(s);return s;}

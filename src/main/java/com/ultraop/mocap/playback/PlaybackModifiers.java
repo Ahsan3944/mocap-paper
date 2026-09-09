@@ -21,9 +21,7 @@ public record PlaybackModifiers(
         TransformationConfig transformationConfig) {
 
     public enum Mirror { NONE, X, Z, XZ }
-
     public enum RecordingCenter { AUTO, BLOCK_CENTER, BLOCK_CORNER, ACTUAL }
-
     public enum SceneCenterType { COMMON_FIRST, COMMON_LAST, COMMON_SPECIFIC, INDIVIDUAL }
 
     public record TransformationConfig(
@@ -43,40 +41,21 @@ public record PlaybackModifiers(
             if (sceneCenterType != SceneCenterType.COMMON_SPECIFIC) sceneCenterSpecific = null;
         }
 
-        public boolean isDefault() {
-            return equals(DEFAULT);
-        }
-
-        public TransformationConfig withRoundBlockPos(boolean value) {
-            return new TransformationConfig(value, recordingCenter, sceneCenterType, sceneCenterSpecific,
-                    centerOffsetX, centerOffsetY, centerOffsetZ);
-        }
-
-        public TransformationConfig withRecordingCenter(RecordingCenter value) {
-            return new TransformationConfig(roundBlockPos, value, sceneCenterType, sceneCenterSpecific,
-                    centerOffsetX, centerOffsetY, centerOffsetZ);
-        }
-
-        public TransformationConfig withSceneCenter(SceneCenterType value, String specific) {
-            return new TransformationConfig(roundBlockPos, recordingCenter, value, specific,
-                    centerOffsetX, centerOffsetY, centerOffsetZ);
-        }
-
-        public TransformationConfig withCenterOffset(double x, double y, double z) {
-            return new TransformationConfig(roundBlockPos, recordingCenter, sceneCenterType, sceneCenterSpecific,
-                    x, y, z);
-        }
+        public boolean isDefault() { return equals(DEFAULT); }
+        public TransformationConfig withRoundBlockPos(boolean value) { return new TransformationConfig(value, recordingCenter, sceneCenterType, sceneCenterSpecific, centerOffsetX, centerOffsetY, centerOffsetZ); }
+        public TransformationConfig withRecordingCenter(RecordingCenter value) { return new TransformationConfig(roundBlockPos, value, sceneCenterType, sceneCenterSpecific, centerOffsetX, centerOffsetY, centerOffsetZ); }
+        public TransformationConfig withSceneCenter(SceneCenterType value, String specific) { return new TransformationConfig(roundBlockPos, recordingCenter, value, specific, centerOffsetX, centerOffsetY, centerOffsetZ); }
+        public TransformationConfig withCenterOffset(double x, double y, double z) { return new TransformationConfig(roundBlockPos, recordingCenter, sceneCenterType, sceneCenterSpecific, x, y, z); }
     }
 
     public static final PlaybackModifiers DEFAULT = new PlaybackModifiers(
-            null, null, false, null,
-            0.0, 0.0, 0.0, true, false, 0.0, Mirror.NONE,
+            null, null, false, null, 0.0, 0.0, 0.0, true, false, 0.0, Mirror.NONE,
             1.0, 1.0, 0.0, 0.0, 0.0, TransformationConfig.DEFAULT);
 
     public PlaybackModifiers withPlayerName(String value) { return copy(value, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
     public PlaybackModifiers withPlayerSkin(String value) { return copy(playerName, value, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
     public PlaybackModifiers withPlayerAsEntity(boolean value) { return copy(playerName, playerSkin, value, entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
-    public PlaybackModifiers withEntityFilter(String value) { return copy(playerName, playerSkin, playerAsEntity, value, startDelaySeconds, waitOnStartSeconds, waitForParentEnd ? entityFilter : entityFilter, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
+    public PlaybackModifiers withEntityFilter(String value) { return copy(playerName, playerSkin, playerAsEntity, value, startDelaySeconds, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
     public PlaybackModifiers withStartDelay(double value) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, value, waitOnStartSeconds, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
     public PlaybackModifiers withWaitOnStart(double value) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, value, waitOnEndSeconds, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }
     public PlaybackModifiers withWaitOnEnd(double value) { return copy(playerName, playerSkin, playerAsEntity, entityFilter, startDelaySeconds, waitOnStartSeconds, value, waitForParentEnd, loop, rotationDegrees, mirror, playerScale, sceneScale, offsetX, offsetY, offsetZ, transformationConfig); }

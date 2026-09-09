@@ -18,21 +18,25 @@ public final class ScenePlayback {
     private final SceneManager sceneManager;
     private final PlaybackManager playbackManager;
     private final Player viewer;
+    private final String sceneName;
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
+    private final SceneData data;
     private final List<PlaybackSession> recordings = new ArrayList<>();
     private final List<ScenePlayback> children = new ArrayList<>();
     private boolean stopped;
     private boolean finished;
     private int waitTicks;
 
-    private ScenePlayback(SceneManager sceneManager, PlaybackManager playbackManager, Player viewer,
-                          PlaybackModifiers modifiers, PositionTransformer transformer) {
+    private ScenePlayback(SceneManager sceneManager, PlaybackManager playbackManager, Player viewer, String sceneName,
+                          PlaybackModifiers modifiers, PositionTransformer transformer, SceneData data) {
         this.sceneManager = sceneManager;
         this.playbackManager = playbackManager;
         this.viewer = viewer;
+        this.sceneName = sceneName;
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
         this.transformer = transformer;
+        this.data = data;
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
     }
 
@@ -46,22 +50,18 @@ public final class ScenePlayback {
                                boolean isRoot, List<String> ancestry) {
         try {
             SceneData data = sceneManager.load(sceneName);
-            if (data == null) return null;
-            if (isRoot && data.elements().isEmpty()) return null;
-
+            if (data == null || (isRoot && data.elements().isEmpty())) return null;
             PlaybackModifiers effective = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
             PositionTransformer transformer = createTransformer(data, effective, parentTransformer, sceneManager);
-            if (transformer == null) return null;
-
-            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, effective, transformer);
-            if (!playback.build(data, ancestry)) return null;
+            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName, effective, transformer, data);
+            if (!playback.build(ancestry)) return null;
             return playback;
         } catch (Exception ignored) {
             return null;
         }
     }
 
-    private boolean build(SceneData data, List<String> ancestry) {
+    private boolean build(List<String> ancestry) {
         for (SceneElement element : data.elements()) {
             String name = element.name();
             PlaybackModifiers merged = element.modifiers().mergeWithParent(modifiers);
@@ -77,7 +77,7 @@ public final class ScenePlayback {
             } else {
                 RecordingSession recording = sceneManager.resolveRecording(element);
                 if (recording == null) return false;
-                PlaybackSession session = playbackManager.play(recording, viewer, merged, transformer);
+                PlaybackSession session = playbackManager.create(recording, viewer, merged, transformer);
                 if (session == null) return false;
                 recordings.add(session);
             }
@@ -111,44 +111,39 @@ public final class ScenePlayback {
             if (!session.isFinished()) inactive = false;
             if (!session.isStopped()) allStopped = false;
         }
-        for (ScenePlayback child : children) {
+        for (ScenePlayback child : new ArrayList<>(children)) {
             child.tick();
             if (!child.isFinished()) inactive = false;
             if (!child.isStopped()) allStopped = false;
         }
 
         if (inactive) finishOrWaitOnEnd();
-        if (allStopped && !recordings.isEmpty() || allStopped && !children.isEmpty()) stop();
+        if (allStopped && (!recordings.isEmpty() || !children.isEmpty())) stop();
     }
 
     private void finishOrWaitOnEnd() {
         if (finished) return;
         finished = true;
         if (modifiers.loop()) {
-            loop();
+            restart();
             return;
         }
         int endWait = secondsToTicks(modifiers.waitOnEndSeconds());
         if (endWait > 0) {
             waitTicks = endWait;
-        } else if (shouldSelfStop()) {
+        } else if (modifiers.waitForParentEnd() || sceneName != null) {
             stop();
         }
     }
 
-    private void loop() {
+    private void restart() {
         for (PlaybackSession session : recordings) session.stop();
         for (ScenePlayback child : children) child.stop();
         recordings.clear();
         children.clear();
-        tickChildrenFromScene();
-        waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
         finished = false;
-    }
-
-    private void tickChildrenFromScene() {
-        // The original child tree is rebuilt by restarting this scene through the normal start path.
-        // ScenePlayback instances are intentionally immutable in their source data.
+        waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
+        build(List.of(sceneName));
     }
 
     public void stop() {
@@ -159,13 +154,7 @@ public final class ScenePlayback {
         for (ScenePlayback child : children) child.stop();
     }
 
-    private boolean shouldSelfStop() { return finished; }
     public boolean isStopped() { return stopped; }
     public boolean isFinished() { return finished; }
     public UUID getId() { return id; }
-
-    private static int secondsToTicks(double seconds) {
-        if (!Double.isFinite(seconds) || seconds <= 0) return 0;
-        return (int) Math.min(Integer.MAX_VALUE, Math.ceil(seconds * 20.0));
-    }
 }

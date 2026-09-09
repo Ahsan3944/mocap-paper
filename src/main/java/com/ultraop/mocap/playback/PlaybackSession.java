@@ -25,23 +25,16 @@ public final class PlaybackSession {
     private boolean paused;
     private boolean stopped;
 
-    public PlaybackSession(RecordingSession recording, Player viewer) {
-        this(recording, viewer, PlaybackModifiers.DEFAULT, null);
-    }
+    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT, null); }
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) { this(recording, viewer, modifiers, null); }
 
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) {
-        this(recording, viewer, modifiers, null);
-    }
-
-    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer transformer) {
+    public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer) {
         this.id = UUID.randomUUID();
         this.recording = recording;
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
-        this.transformer = transformer == null
-                ? new PositionTransformer(this.modifiers, null, calculateDefaultCenter())
-                : transformer;
+        this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
         if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
 
         PlayerStateFrame first = frames.get(0);
@@ -103,17 +96,36 @@ public final class PlaybackSession {
 
     private Location transform(Location source) { return transformer.transform(source); }
 
-    private org.bukkit.util.Vector calculateDefaultCenter() {
+    private org.bukkit.util.Vector calculateRecordingCenter() {
         if (frames.isEmpty()) return new org.bukkit.util.Vector(0, 0, 0);
         PlayerStateFrame start = frames.get(0);
         org.bukkit.util.Vector pos = new org.bukkit.util.Vector(start.x(), start.y(), start.z());
-        org.bukkit.util.Vector center = new org.bukkit.util.Vector(
-                Math.round(pos.getX() - 0.5) + 0.5,
-                Math.floor(pos.getY()),
-                Math.round(pos.getZ() - 0.5) + 0.5);
-        org.bukkit.util.Vector corner = new org.bukkit.util.Vector(
-                Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
-        return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
+        PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig();
+        org.bukkit.util.Vector center = switch (config.recordingCenter()) {
+            case ACTUAL -> pos.clone();
+            case BLOCK_CENTER -> blockCenter(pos);
+            case BLOCK_CORNER -> blockCorner(pos);
+            case AUTO -> autoCenter(pos);
+        };
+        return center.add(config.centerOffsetX(), config.centerOffsetY(), config.centerOffsetZ());
+    }
+
+    private org.bukkit.util.Vector autoCenter(org.bukkit.util.Vector pos) {
+        double scale = modifiers.sceneScale();
+        if (scale == 1.0 || scale != Math.rint(scale)) {
+            org.bukkit.util.Vector center = blockCenter(pos);
+            org.bukkit.util.Vector corner = blockCorner(pos);
+            return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
+        }
+        return ((int) scale % 2 == 1) ? blockCenter(pos) : blockCorner(pos);
+    }
+
+    private static org.bukkit.util.Vector blockCenter(org.bukkit.util.Vector pos) {
+        return new org.bukkit.util.Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
+    }
+
+    private static org.bukkit.util.Vector blockCorner(org.bukkit.util.Vector pos) {
+        return new org.bukkit.util.Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
     }
 
     private static long secondsToTicks(double seconds) { return Math.max(0L, (long) Math.ceil(seconds * 20.0)); }

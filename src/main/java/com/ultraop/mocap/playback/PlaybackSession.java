@@ -17,6 +17,7 @@ import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
 import java.util.LinkedHashMap;
@@ -39,7 +40,7 @@ public final class PlaybackSession {
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
     private final World targetWorld;
-    private final boolean root, blockActionsPlayback, blockInitialization, invulnerablePlayback,
+    private final boolean root, blockActionsPlayback, blockInitialization, blockAllowScaled, invulnerablePlayback,
             preventTrackingPlayedEntities, assignProfile, chatPlayback;
     private final String playerNameHandling;
     private final EntityFilter playEntities;
@@ -103,6 +104,8 @@ public final class PlaybackSession {
         this.root = root;
         this.blockActionsPlayback = blockActionsPlayback;
         this.blockInitialization = blockInitialization;
+        this.blockAllowScaled = JavaPlugin.getProvidingPlugin(PlaybackSession.class).getConfig()
+                .getBoolean("settings.block_allow_scaled", false);
         this.playEntities = playEntities == null ? EntityFilter.ALL : playEntities;
         this.invulnerablePlayback = invulnerablePlayback;
         this.preventTrackingPlayedEntities = preventTrackingPlayedEntities;
@@ -310,11 +313,12 @@ public final class PlaybackSession {
     private void initializeBlocks() {
         if (!blockInitialization) return;
         for (BlockActionFrame a : blockActions) {
-            Location l = transformedBlockLocation(a);
-            if (l == null) continue;
-            try {
-                l.getBlock().setBlockData(Bukkit.createBlockData(a.beforeState()), false);
-            } catch (IllegalArgumentException ignored) { }
+            BlockData before = createTransformedBlockData(a.beforeState());
+            for (Location l : transformedBlockLocations(a)) {
+                if (before == null) continue;
+                try { l.getBlock().setBlockData(before.clone(), false); }
+                catch (IllegalArgumentException ignored) { }
+            }
         }
     }
 
@@ -322,13 +326,30 @@ public final class PlaybackSession {
         if (!blockActionsPlayback) return;
         for (BlockActionFrame a : blockActions) {
             if (a.tick() != target || a.action() == BlockActionFrame.Action.INTERACT) continue;
-            Location l = transformedBlockLocation(a);
-            if (l == null) continue;
-            try {
-                BlockData d = Bukkit.createBlockData(a.afterState());
-                l.getBlock().setBlockData(d, false);
-            } catch (IllegalArgumentException ignored) { }
+            BlockData after = createTransformedBlockData(a.afterState());
+            if (after == null) continue;
+            for (Location l : transformedBlockLocations(a)) {
+                try { l.getBlock().setBlockData(after.clone(), false); }
+                catch (IllegalArgumentException ignored) { }
+            }
         }
+    }
+
+    private BlockData createTransformedBlockData(String state) {
+        try {
+            return transformer.transformBlockState(Bukkit.createBlockData(state));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private List<Location> transformedBlockLocations(BlockActionFrame a) {
+        List<Vector> positions = transformer.transformBlockPositions(
+                new Vector(a.x(), a.y(), a.z()), blockAllowScaled);
+        if (positions.isEmpty()) return List.of();
+        return positions.stream()
+                .map(p -> new Location(targetWorld, Math.floor(p.getX()), Math.floor(p.getY()), Math.floor(p.getZ())))
+                .toList();
     }
 
     private void applyChatMessages(long target) {
@@ -341,11 +362,6 @@ public final class PlaybackSession {
                         .append(Component.text("> ")).append(message));
             } catch (Exception ignored) { }
         }
-    }
-
-    private Location transformedBlockLocation(BlockActionFrame a) {
-        Vector p = transformer.transformBlockPosition(new Vector(a.x(), a.y(), a.z()));
-        return new Location(targetWorld, Math.floor(p.getX()), Math.floor(p.getY()), Math.floor(p.getZ()));
     }
 
     private Entity playbackPlayerEntity() {

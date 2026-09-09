@@ -32,69 +32,46 @@ public final class ScenePlayback {
     private boolean finished;
     private int waitTicks;
 
-    private ScenePlayback(SceneManager sceneManager, PlaybackManager playbackManager, Player viewer, String sceneName,
-                          boolean root, PlaybackModifiers modifiers, PositionTransformer transformer, SceneData data) {
-        this.sceneManager = sceneManager;
-        this.playbackManager = playbackManager;
-        this.viewer = viewer;
-        this.sceneName = sceneName;
-        this.root = root;
-        this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
-        this.transformer = transformer;
-        this.data = data;
+    private ScenePlayback(SceneManager sceneManager, PlaybackManager playbackManager, Player viewer, String sceneName, boolean root, PlaybackModifiers modifiers, PositionTransformer transformer, SceneData data) {
+        this.sceneManager = sceneManager; this.playbackManager = playbackManager; this.viewer = viewer; this.sceneName = sceneName; this.root = root;
+        this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers; this.transformer = transformer; this.data = data;
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
     }
 
-    public static ScenePlayback start(SceneManager sceneManager, PlaybackManager playbackManager,
-                                      String sceneName, Player viewer, PlaybackModifiers modifiers) {
+    public static ScenePlayback start(SceneManager sceneManager, PlaybackManager playbackManager, String sceneName, Player viewer, PlaybackModifiers modifiers) {
         return start(sceneManager, playbackManager, sceneName, viewer, modifiers, null, true, new ArrayList<>());
     }
 
-    static ScenePlayback start(SceneManager sceneManager, PlaybackManager playbackManager, String sceneName,
-                               Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer,
-                               boolean isRoot, List<String> ancestry) {
+    static ScenePlayback start(SceneManager sceneManager, PlaybackManager playbackManager, String sceneName, Player viewer, PlaybackModifiers modifiers, PositionTransformer parentTransformer, boolean isRoot, List<String> ancestry) {
         try {
             SceneData data = sceneManager.load(sceneName);
             if (data == null || (isRoot && data.elements().isEmpty())) return null;
             PlaybackModifiers effective = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
             PositionTransformer transformer = createTransformer(data, effective, parentTransformer, sceneManager);
-            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName,
-                    isRoot, effective, transformer, data);
-            if (!playback.build(ancestry)) return null;
-            return playback;
-        } catch (Exception ignored) {
-            return null;
-        }
+            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName, isRoot, effective, transformer, data);
+            return playback.build(ancestry) ? playback : null;
+        } catch (Exception ignored) { return null; }
     }
 
     private boolean build(List<String> ancestry) {
         for (SceneElement element : data.elements()) {
-            String name = element.name();
-            PlaybackModifiers merged = element.modifiers().mergeWithParent(modifiers);
+            String name = element.name(); PlaybackModifiers merged = element.modifiers().mergeWithParent(modifiers);
             if (name.startsWith(".")) {
-                String childName = name.substring(1);
-                if (childName.isBlank() || ancestry.contains(childName)) return false;
-                List<String> next = new ArrayList<>(ancestry);
-                next.add(childName);
+                String childName = name.substring(1); if (childName.isBlank() || ancestry.contains(childName)) return false;
+                List<String> next = new ArrayList<>(ancestry); next.add(childName);
                 ScenePlayback child = start(sceneManager, playbackManager, childName, viewer, merged, transformer, false, next);
-                if (child == null) return false;
-                children.add(child);
+                if (child == null) return false; children.add(child);
             } else {
-                RecordingSession recording = sceneManager.resolveRecording(element);
-                if (recording == null) return false;
-                PlaybackSession session = playbackManager.create(recording, viewer, merged, transformer);
-                if (session == null) return false;
-                recordings.add(session);
+                RecordingSession recording = sceneManager.resolveRecording(element); if (recording == null) return false;
+                PlaybackSession session = playbackManager.create(recording, viewer, merged, transformer); if (session == null) return false; recordings.add(session);
             }
         }
         return true;
     }
 
-    private static PositionTransformer createTransformer(SceneData data, PlaybackModifiers modifiers,
-                                                         PositionTransformer parent, SceneManager manager) {
+    private static PositionTransformer createTransformer(SceneData data, PlaybackModifiers modifiers, PositionTransformer parent, SceneManager manager) {
         if (parent != null && isTransformationDefault(modifiers)) return parent;
-        PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig();
-        Vector center = null;
+        PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig(); Vector center = null;
         if (config.sceneCenterType() != PlaybackModifiers.SceneCenterType.INDIVIDUAL && !data.elements().isEmpty()) {
             center = getSceneStartPos(data, config.sceneCenterType(), config.sceneCenterSpecific(), manager, new HashSet<>());
         }
@@ -102,17 +79,11 @@ public final class ScenePlayback {
     }
 
     private static boolean isTransformationDefault(PlaybackModifiers modifiers) {
-        return modifiers.rotationDegrees() == 0.0
-                && modifiers.mirror() == PlaybackModifiers.Mirror.NONE
-                && modifiers.sceneScale() == 1.0
-                && modifiers.offsetX() == 0.0
-                && modifiers.offsetY() == 0.0
-                && modifiers.offsetZ() == 0.0
-                && modifiers.transformationConfig().isDefault();
+        return modifiers.rotationDegrees() == 0.0 && modifiers.mirror() == PlaybackModifiers.Mirror.NONE && modifiers.sceneScale() == 1.0
+                && modifiers.offsetX() == 0.0 && modifiers.offsetY() == 0.0 && modifiers.offsetZ() == 0.0 && modifiers.transformationConfig().isDefault();
     }
 
-    private static Vector getSceneStartPos(SceneData sceneData, PlaybackModifiers.SceneCenterType type, String specific,
-                                           SceneManager manager, Set<String> ancestry) {
+    private static Vector getSceneStartPos(SceneData sceneData, PlaybackModifiers.SceneCenterType type, String specific, SceneManager manager, Set<String> ancestry) {
         if (sceneData == null || sceneData.elements().isEmpty()) return null;
         SceneElement element = switch (type) {
             case COMMON_LAST -> sceneData.elements().get(sceneData.elements().size() - 1);
@@ -124,124 +95,61 @@ public final class ScenePlayback {
 
     private static SceneElement resolveSpecific(SceneData data, String specific) {
         if (specific == null || specific.isBlank()) return data.elements().get(0);
-        int dash = specific.indexOf('-');
-        String position = dash >= 0 ? specific.substring(0, dash) : specific;
-        String expectedName = dash >= 0 ? specific.substring(dash + 1) : null;
-        try {
-            int index = Integer.parseInt(position);
-            if (index < 1 || index > data.elements().size()) return null;
-            SceneElement element = data.elements().get(index - 1);
-            return expectedName == null || expectedName.equals(element.name()) ? element : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        int dash = specific.indexOf('-'); String position = dash >= 0 ? specific.substring(0, dash) : specific; String expectedName = dash >= 0 ? specific.substring(dash + 1) : null;
+        try { int index = Integer.parseInt(position); if (index < 1 || index > data.elements().size()) return null; SceneElement element = data.elements().get(index - 1); return expectedName == null || expectedName.equals(element.name()) ? element : null; }
+        catch (NumberFormatException ignored) { return null; }
     }
 
     private static Vector getElementStartPos(SceneElement element, SceneManager manager, Set<String> ancestry) {
         RecordingSession recording = manager.resolveRecording(element);
         if (recording != null) return calculateCenter(recordingStart(recording), element.modifiers());
-
-        String name = element.name();
-        if (!name.startsWith(".")) return null;
-        String childName = name.substring(1);
-        if (childName.isBlank() || !ancestry.add(childName)) return null;
+        String name = element.name(); if (!name.startsWith(".")) return null;
+        String childName = name.substring(1); if (childName.isBlank() || !ancestry.add(childName)) return null;
         try {
-            SceneData child = manager.load(childName);
-            if (child == null || child.elements().isEmpty()) return null;
+            SceneData child = manager.load(childName); if (child == null || child.elements().isEmpty()) return null;
             PlaybackModifiers.TransformationConfig childConfig = element.modifiers().transformationConfig();
             Vector nested = getSceneStartPos(child, childConfig.sceneCenterType(), childConfig.sceneCenterSpecific(), manager, ancestry);
             return nested == null ? null : calculateCenter(nested, element.modifiers());
-        } catch (Exception ignored) {
-            return null;
-        }
+        } catch (Exception ignored) { return null; }
     }
 
-    private static Vector recordingStart(RecordingSession recording) {
-        PlayerStateFrame frame = recording.getFrames().isEmpty() ? null : recording.getFrames().get(0);
-        return frame == null ? null : new Vector(frame.x(), frame.y(), frame.z());
-    }
+    private static Vector recordingStart(RecordingSession recording) { PlayerStateFrame frame = recording.getFrames().isEmpty() ? null : recording.getFrames().get(0); return frame == null ? null : new Vector(frame.x(), frame.y(), frame.z()); }
 
     private static Vector calculateCenter(Vector startPos, PlaybackModifiers modifiers) {
         if (startPos == null) return null;
-        PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig();
-        Vector center = switch (config.recordingCenter()) {
-            case ACTUAL -> startPos.clone();
-            case BLOCK_CENTER -> blockCenter(startPos);
-            case BLOCK_CORNER -> blockCorner(startPos);
-            case AUTO -> autoCenter(startPos, modifiers.sceneScale());
+        PlaybackModifiers.TransformationConfig config = modifiers.transformationConfig(); Vector center = switch (config.recordingCenter()) {
+            case ACTUAL -> startPos.clone(); case BLOCK_CENTER -> blockCenter(startPos); case BLOCK_CORNER -> blockCorner(startPos); case AUTO -> autoCenter(startPos, modifiers.sceneScale());
         };
-        return center.add(config.centerOffsetX(), config.centerOffsetY(), config.centerOffsetZ());
+        return center.add(new Vector(config.centerOffsetX(), config.centerOffsetY(), config.centerOffsetZ()));
     }
 
     private static Vector autoCenter(Vector pos, double sceneScale) {
-        if (sceneScale == 1.0 || sceneScale != Math.rint(sceneScale)) {
-            Vector center = blockCenter(pos);
-            Vector corner = blockCorner(pos);
-            return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center;
-        }
+        if (sceneScale == 1.0 || sceneScale != Math.rint(sceneScale)) { Vector center = blockCenter(pos), corner = blockCorner(pos); return pos.distanceSquared(center) > pos.distanceSquared(corner) ? corner : center; }
         return ((int) sceneScale % 2 == 1) ? blockCenter(pos) : blockCorner(pos);
     }
-
-    private static Vector blockCenter(Vector pos) {
-        return new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5);
-    }
-
-    private static Vector blockCorner(Vector pos) {
-        return new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ()));
-    }
+    private static Vector blockCenter(Vector pos) { return new Vector(Math.round(pos.getX() - 0.5) + 0.5, Math.floor(pos.getY()), Math.round(pos.getZ() - 0.5) + 0.5); }
+    private static Vector blockCorner(Vector pos) { return new Vector(Math.round(pos.getX()), Math.floor(pos.getY()), Math.round(pos.getZ())); }
 
     public void tick() {
-        if (stopped) return;
-        if (waitTicks > 0) { waitTicks--; return; }
-        boolean inactive = true;
-        boolean allStopped = true;
-        for (PlaybackSession session : new ArrayList<>(recordings)) {
-            session.advance();
-            if (!session.isFinished()) inactive = false;
-            if (!session.isStopped()) allStopped = false;
-        }
-        for (ScenePlayback child : new ArrayList<>(children)) {
-            child.tick();
-            if (!child.isFinished()) inactive = false;
-            if (!child.isStopped()) allStopped = false;
-        }
-        if (inactive) finishOrWaitOnEnd();
-        if (allStopped && (!recordings.isEmpty() || !children.isEmpty())) stop();
+        if (stopped) return; if (waitTicks > 0) { waitTicks--; return; }
+        boolean inactive = true, allStopped = true;
+        for (PlaybackSession session : new ArrayList<>(recordings)) { session.advance(); if (!session.isFinished()) inactive = false; if (!session.isStopped()) allStopped = false; }
+        for (ScenePlayback child : new ArrayList<>(children)) { child.tick(); if (!child.isFinished()) inactive = false; if (!child.isStopped()) allStopped = false; }
+        if (inactive) finishOrWaitOnEnd(); if (allStopped && (!recordings.isEmpty() || !children.isEmpty())) stop();
     }
 
     private void finishOrWaitOnEnd() {
-        if (finished) return;
-        finished = true;
-        if (modifiers.loop()) { restart(); return; }
-        int endWait = secondsToTicks(modifiers.waitOnEndSeconds());
-        if (endWait > 0) waitTicks = endWait;
-        else if (root || !modifiers.waitForParentEnd()) stop();
+        if (finished) return; finished = true; if (modifiers.loop()) { restart(); return; }
+        int endWait = secondsToTicks(modifiers.waitOnEndSeconds()); if (endWait > 0) waitTicks = endWait; else if (root || !modifiers.waitForParentEnd()) stop();
     }
 
     private void restart() {
-        for (PlaybackSession session : recordings) session.stop();
-        for (ScenePlayback child : children) child.stop();
-        recordings.clear();
-        children.clear();
-        finished = false;
-        stopped = false;
-        waitTicks = secondsToTicks(modifiers.startDelaySeconds() + modifiers.waitOnStartSeconds());
-        build(List.of(sceneName));
+        for (PlaybackSession session : recordings) session.stop(); for (ScenePlayback child : children) child.stop(); recordings.clear(); children.clear();
+        finished = false; stopped = false; waitTicks = secondsToTicks(modifiers.startDelaySeconds() + modifiers.waitOnStartSeconds()); build(List.of(sceneName));
     }
 
-    public void stop() {
-        if (stopped) return;
-        stopped = true;
-        finished = true;
-        for (PlaybackSession session : recordings) session.stop();
-        for (ScenePlayback child : children) child.stop();
-    }
-
-    private static int secondsToTicks(double seconds) {
-        if (!Double.isFinite(seconds) || seconds <= 0.0) return 0;
-        return (int) Math.min(Integer.MAX_VALUE, Math.ceil(seconds * 20.0));
-    }
-
+    public void stop() { if (stopped) return; stopped = true; finished = true; for (PlaybackSession session : recordings) session.stop(); for (ScenePlayback child : children) child.stop(); }
+    private static int secondsToTicks(double seconds) { if (!Double.isFinite(seconds) || seconds <= 0.0) return 0; return (int) Math.min(Integer.MAX_VALUE, Math.ceil(seconds * 20.0)); }
     public boolean isStopped() { return stopped; }
     public boolean isFinished() { return finished; }
     public UUID getId() { return id; }

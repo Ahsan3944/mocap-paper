@@ -25,7 +25,7 @@ import java.util.UUID;
 
 /** Persistent storage for saved MoCap recordings. */
 public final class RecordingRepository {
-    private static final int FORMAT_VERSION = 2;
+    private static final int FORMAT_VERSION = 3;
     private final Path directory;
 
     public RecordingRepository(Path directory) { this.directory = directory; }
@@ -35,19 +35,15 @@ public final class RecordingRepository {
         validateName(name); initialize(); Path target = pathFor(name);
         try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(target)))) {
             out.writeInt(FORMAT_VERSION);
-            out.writeUTF(session.getId().toString());
-            out.writeUTF(session.getSourcePlayerId().toString());
-            out.writeUTF(session.getSourcePlayerName());
-            out.writeUTF(session.getStartedAt().toString());
+            out.writeUTF(session.getId().toString()); out.writeUTF(session.getSourcePlayerId().toString());
+            out.writeUTF(session.getSourcePlayerName()); out.writeUTF(session.getStartedAt().toString());
             out.writeBoolean(session.getStoppedAt() != null);
             if (session.getStoppedAt() != null) out.writeUTF(session.getStoppedAt().toString());
-            out.writeInt(session.getFrames().size());
-            out.writeInt(session.getEntityFrames().size());
+            out.writeInt(session.getFrames().size()); out.writeInt(session.getEntityFrames().size());
             try (BukkitObjectOutputStream objects = new BukkitObjectOutputStream(out)) {
                 for (PlayerStateFrame frame : session.getFrames()) writeFrame(objects, frame);
                 for (var entry : session.getEntityFrames().entrySet()) {
-                    out.writeUTF(entry.getKey().toString());
-                    out.writeInt(entry.getValue().size());
+                    out.writeUTF(entry.getKey().toString()); out.writeInt(entry.getValue().size());
                     for (EntityStateFrame frame : entry.getValue()) writeEntityFrame(objects, frame);
                 }
             }
@@ -60,13 +56,10 @@ public final class RecordingRepository {
         try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(source)))) {
             int version = in.readInt();
             if (version != FORMAT_VERSION) throw new IOException("Unsupported recording format version: " + version);
-            UUID id = UUID.fromString(in.readUTF());
-            UUID playerId = UUID.fromString(in.readUTF());
-            String playerName = in.readUTF();
-            Instant startedAt = Instant.parse(in.readUTF());
+            UUID id = UUID.fromString(in.readUTF()); UUID playerId = UUID.fromString(in.readUTF());
+            String playerName = in.readUTF(); Instant startedAt = Instant.parse(in.readUTF());
             Instant stoppedAt = in.readBoolean() ? Instant.parse(in.readUTF()) : null;
-            int frameCount = in.readInt();
-            int entityCount = in.readInt();
+            int frameCount = in.readInt(); int entityCount = in.readInt();
             if (frameCount < 0 || frameCount > 10_000_000 || entityCount < 0 || entityCount > 1_000_000)
                 throw new IOException("Invalid recording counts");
             List<PlayerStateFrame> frames = new ArrayList<>(frameCount);
@@ -74,8 +67,7 @@ public final class RecordingRepository {
             try (BukkitObjectInputStream objects = new BukkitObjectInputStream(in)) {
                 for (int i = 0; i < frameCount; i++) frames.add(readFrame(objects));
                 for (int i = 0; i < entityCount; i++) {
-                    UUID entityId = UUID.fromString(in.readUTF());
-                    int count = in.readInt();
+                    UUID entityId = UUID.fromString(in.readUTF()); int count = in.readInt();
                     if (count < 0 || count > 10_000_000) throw new IOException("Invalid entity frame count");
                     List<EntityStateFrame> values = new ArrayList<>(count);
                     for (int j = 0; j < count; j++) values.add(readEntityFrame(objects));
@@ -93,8 +85,7 @@ public final class RecordingRepository {
                     .sorted(Comparator.comparing(path -> path.getFileName().toString())).toList();
         }
         for (Path file : files) {
-            String f = file.getFileName().toString();
-            result.put(f.substring(0, f.length() - 6), load(f.substring(0, f.length() - 6)));
+            String f = file.getFileName().toString(); result.put(f.substring(0, f.length() - 6), load(f.substring(0, f.length() - 6)));
         }
         return result;
     }
@@ -121,6 +112,7 @@ public final class RecordingRepository {
         out.writeUTF(f.pose().name()); out.writeFloat(f.fallDistance()); out.writeInt(f.fireTicks()); out.writeBoolean(f.invisible()); out.writeBoolean(f.glowing());
         out.writeBoolean(f.invulnerable()); out.writeDouble(f.health()); out.writeObject(f.mainHand()); out.writeObject(f.offHand()); out.writeInt(f.armor().length);
         for (ItemStack item : f.armor()) out.writeObject(item);
+        writeUuid(out, f.vehicleId());
     }
 
     private static PlayerStateFrame readFrame(ObjectInputStream in) throws IOException {
@@ -129,7 +121,8 @@ public final class RecordingRepository {
             double vx=in.readDouble(),vy=in.readDouble(),vz=in.readDouble(); boolean ground=in.readBoolean(),sprint=in.readBoolean(),sneak=in.readBoolean(),swim=in.readBoolean(),glide=in.readBoolean(),fly=in.readBoolean();
             Pose pose=Pose.valueOf(in.readUTF()); float fall=in.readFloat(); int fire=in.readInt(); boolean invisible=in.readBoolean(),glowing=in.readBoolean(),invulnerable=in.readBoolean(); double health=in.readDouble();
             ItemStack main=(ItemStack)in.readObject(),off=(ItemStack)in.readObject(); int ac=in.readInt(); if(ac<0||ac>8)throw new IOException("Invalid armor count"); ItemStack[] armor=new ItemStack[ac]; for(int i=0;i<ac;i++)armor[i]=(ItemStack)in.readObject();
-            return new PlayerStateFrame(tick,world,x,y,z,yaw,pitch,vx,vy,vz,ground,sprint,sneak,swim,glide,fly,pose,fall,fire,invisible,glowing,invulnerable,health,main,off,armor);
+            UUID vehicleId=readUuid(in);
+            return new PlayerStateFrame(tick,world,x,y,z,yaw,pitch,vx,vy,vz,ground,sprint,sneak,swim,glide,fly,pose,fall,fire,invisible,glowing,invulnerable,health,main,off,armor,vehicleId);
         } catch(ClassNotFoundException|IllegalArgumentException e){throw new IOException("Invalid player frame",e);}
     }
 
@@ -139,6 +132,7 @@ public final class RecordingRepository {
         out.writeDouble(f.velocityX()); out.writeDouble(f.velocityY()); out.writeDouble(f.velocityZ()); out.writeInt(f.fireTicks());
         out.writeBoolean(f.invisible()); out.writeBoolean(f.glowing()); out.writeBoolean(f.invulnerable()); out.writeDouble(f.health());
         out.writeObject(f.mainHand()); out.writeObject(f.offHand()); out.writeInt(f.armor().length); for(ItemStack item:f.armor())out.writeObject(item);
+        writeUuid(out, f.vehicleId());
     }
 
     private static EntityStateFrame readEntityFrame(ObjectInputStream in) throws IOException {
@@ -146,7 +140,18 @@ public final class RecordingRepository {
             long tick=in.readLong(); UUID id=UUID.fromString(in.readUTF()); String type=in.readUTF(),world=in.readUTF(); double x=in.readDouble(),y=in.readDouble(),z=in.readDouble(); float yaw=in.readFloat(),pitch=in.readFloat();
             double vx=in.readDouble(),vy=in.readDouble(),vz=in.readDouble(); int fire=in.readInt(); boolean invisible=in.readBoolean(),glowing=in.readBoolean(),invulnerable=in.readBoolean(); double health=in.readDouble();
             ItemStack main=(ItemStack)in.readObject(),off=(ItemStack)in.readObject(); int ac=in.readInt(); if(ac<0||ac>8)throw new IOException("Invalid entity armor count"); ItemStack[] armor=new ItemStack[ac]; for(int i=0;i<ac;i++)armor[i]=(ItemStack)in.readObject();
-            return new EntityStateFrame(tick,id,type,world,x,y,z,yaw,pitch,vx,vy,vz,fire,invisible,glowing,invulnerable,health,main,off,armor);
+            UUID vehicleId=readUuid(in);
+            return new EntityStateFrame(tick,id,type,world,x,y,z,yaw,pitch,vx,vy,vz,fire,invisible,glowing,invulnerable,health,main,off,armor,vehicleId);
         } catch(ClassNotFoundException|IllegalArgumentException e){throw new IOException("Invalid entity frame",e);}
+    }
+
+    private static void writeUuid(DataOutputStream out, UUID uuid) throws IOException {
+        out.writeBoolean(uuid != null); if (uuid != null) { out.writeLong(uuid.getMostSignificantBits()); out.writeLong(uuid.getLeastSignificantBits()); }
+    }
+    private static void writeUuid(ObjectOutputStream out, UUID uuid) throws IOException {
+        out.writeBoolean(uuid != null); if (uuid != null) { out.writeLong(uuid.getMostSignificantBits()); out.writeLong(uuid.getLeastSignificantBits()); }
+    }
+    private static UUID readUuid(ObjectInputStream in) throws IOException {
+        if (!in.readBoolean()) return null; return new UUID(in.readLong(), in.readLong());
     }
 }

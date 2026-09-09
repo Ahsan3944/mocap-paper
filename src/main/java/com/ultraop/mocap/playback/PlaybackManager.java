@@ -51,7 +51,7 @@ public final class PlaybackManager {
     }
 
     public PlaybackSession play(RecordingSession recording, Player viewer, PlaybackModifiers effectiveModifiers) {
-        PlaybackSession s = create(recording, viewer, effectiveModifiers, null);
+        PlaybackSession s = create(recording, viewer, effectiveModifiers, null, true);
         if (s == null) return null;
         active.put(s.getId(), s);
         return s;
@@ -59,8 +59,18 @@ public final class PlaybackManager {
 
     public PlaybackSession create(RecordingSession recording, Player viewer, PlaybackModifiers effectiveModifiers,
                                   PositionTransformer transformer) {
-        PlaybackSession s = new PlaybackSession(recording, viewer, effectiveModifiers, transformer);
+        return create(recording, viewer, effectiveModifiers, transformer, false);
+    }
+
+    public PlaybackSession create(RecordingSession recording, Player viewer, PlaybackModifiers effectiveModifiers,
+                                  PositionTransformer transformer, boolean root) {
+        PlaybackSession s = new PlaybackSession(recording, viewer, effectiveModifiers, transformer, root);
         return s.isStopped() ? null : s;
+    }
+
+    public PlaybackSession createSubscene(RecordingSession recording, Player viewer, PlaybackModifiers effectiveModifiers,
+                                          PositionTransformer transformer) {
+        return create(recording, viewer, effectiveModifiers, transformer, false);
     }
 
     public ScenePlayback playScene(String sceneName, Player viewer, PlaybackModifiers effectiveModifiers) {

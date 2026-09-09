@@ -27,25 +27,7 @@ public record EntityFilter(String expression) {
             EntityType.COMMAND_BLOCK_MINECART
     );
 
-    private static final Set<EntityType> VEHICLES = EnumSet.of(
-            EntityType.BOAT,
-            EntityType.CHEST_BOAT,
-            EntityType.ACACIA_BOAT,
-            EntityType.BIRCH_BOAT,
-            EntityType.CHERRY_BOAT,
-            EntityType.DARK_OAK_BOAT,
-            EntityType.JUNGLE_BOAT,
-            EntityType.MANGROVE_BOAT,
-            EntityType.OAK_BOAT,
-            EntityType.SPRUCE_BOAT,
-            EntityType.ACACIA_CHEST_BOAT,
-            EntityType.BIRCH_CHEST_BOAT,
-            EntityType.CHERRY_CHEST_BOAT,
-            EntityType.DARK_OAK_CHEST_BOAT,
-            EntityType.JUNGLE_CHEST_BOAT,
-            EntityType.MANGROVE_CHEST_BOAT,
-            EntityType.OAK_CHEST_BOAT,
-            EntityType.SPRUCE_CHEST_BOAT,
+    private static final Set<EntityType> RIDABLE_MOBS = EnumSet.of(
             EntityType.HORSE,
             EntityType.DONKEY,
             EntityType.MULE,
@@ -111,10 +93,10 @@ public record EntityFilter(String expression) {
         boolean matches(EntityType type) {
             String id = type.getKey().toString().toLowerCase(Locale.ROOT);
             if (value.equals("*")) return true;
-            if (value.equals("@vehicles")) return VEHICLES.contains(type) || isVehicleType(type);
-            if (value.equals("@projectiles")) return Projectile.class.isAssignableFrom(type.getEntityClass());
-            if (value.equals("@items")) return Item.class.isAssignableFrom(type.getEntityClass());
-            if (value.equals("@mobs")) return Mob.class.isAssignableFrom(type.getEntityClass());
+            if (value.equals("@vehicles")) return RIDABLE_MOBS.contains(type) || isVehicleType(type);
+            if (value.equals("@projectiles")) return isAssignable(type, Projectile.class);
+            if (value.equals("@items")) return isAssignable(type, Item.class);
+            if (value.equals("@mobs")) return isAssignable(type, Mob.class);
             if (value.equals("@minecarts")) return MINECARTS.contains(type);
             if (value.startsWith("$")) return false;
             if (value.endsWith(":*")) return id.startsWith(value.substring(0, value.length() - 1));
@@ -122,9 +104,13 @@ public record EntityFilter(String expression) {
             return value.equals(id) || value.equals(type.name().toLowerCase(Locale.ROOT));
         }
 
-        private static boolean isVehicleType(EntityType type) {
+        private static boolean isAssignable(EntityType type, Class<?> base) {
             Class<? extends Entity> entityClass = type.getEntityClass();
-            return entityClass != null && Vehicle.class.isAssignableFrom(entityClass);
+            return entityClass != null && base.isAssignableFrom(entityClass);
+        }
+
+        private static boolean isVehicleType(EntityType type) {
+            return isAssignable(type, Vehicle.class);
         }
     }
 }

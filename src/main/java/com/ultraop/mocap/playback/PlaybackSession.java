@@ -35,14 +35,17 @@ public final class PlaybackSession {
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
     private final boolean root;
+    private final boolean blockActionsPlayback;
+    private final boolean blockInitialization;
     private long tick, waitTicks, waitOnEnd;
     private boolean paused, finished, stopped;
 
-    public PlaybackSession(RecordingSession r, Player v){this(r,v,PlaybackModifiers.DEFAULT,null,true);}
-    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m){this(r,v,m,null,true);}
-    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p){this(r,v,m,p,false);}
-    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p, boolean root){
-        recording=r; viewerPlayerId=v.getUniqueId(); frames=r.getFrames(); entityFrames=r.getEntityFrames(); blockActions=r.getBlockActions(); modifiers=m==null?PlaybackModifiers.DEFAULT:m; this.root=root;
+    public PlaybackSession(RecordingSession r, Player v){this(r,v,PlaybackModifiers.DEFAULT,null,true,true,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m){this(r,v,m,null,true,true,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p){this(r,v,m,p,false,true,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p, boolean root){this(r,v,m,p,root,true,true);}
+    public PlaybackSession(RecordingSession r, Player v, PlaybackModifiers m, PositionTransformer p, boolean root, boolean blockActionsPlayback, boolean blockInitialization){
+        recording=r; viewerPlayerId=v.getUniqueId(); frames=r.getFrames(); entityFrames=r.getEntityFrames(); blockActions=r.getBlockActions(); modifiers=m==null?PlaybackModifiers.DEFAULT:m; this.root=root; this.blockActionsPlayback=blockActionsPlayback; this.blockInitialization=blockInitialization;
         transformer=new PositionTransformer(modifiers,p,calculateRecordingCenter());
         if(frames.isEmpty()){fakePlayer=null;entityActor=null;stopped=true;return;}
         PlayerStateFrame f=frames.get(0); World w=findWorld(f.worldKey(),v.getWorld()); Location spawn=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));
@@ -62,8 +65,8 @@ public final class PlaybackSession {
     private void applyFrame(PlayerStateFrame f){World w=findWorld(f.worldKey(),currentWorld());Location l=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));if(entityActor!=null)entityActor.apply(f,l);else{fakePlayer.apply(f);fakePlayer.getBukkitEntity().teleport(l);}}
     private void applyEntityFrames(){for(Map.Entry<UUID,List<EntityStateFrame>> e:entityFrames.entrySet()){List<EntityStateFrame> t=e.getValue();EntityStateFrame f=frameAtTick(t,tick);EntityPlaybackActor a=entityActors.get(e.getKey());if(f==null){if(a!=null&&lastTick(t)<tick){eject(a.entity());a.remove();entityActors.remove(e.getKey());}continue;}if(a==null){EntityType type=EntityType.fromName(f.entityType());if(type==null||type==EntityType.PLAYER||!modifiers.entityFilter().matches(type))continue;World w=findWorld(f.worldKey(),currentWorld());Location l=transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch()));try{a=new EntityPlaybackActor(w.spawnEntity(l,type),modifiers.sceneScale());entityActors.put(e.getKey(),a);}catch(IllegalArgumentException ignored){continue;}}World w=findWorld(f.worldKey(),a.entity().getWorld());a.apply(f,transform(new Location(w,f.x(),f.y(),f.z(),f.yaw(),f.pitch())));}}
     private void applyRidingRelationships(PlayerStateFrame pf){Entity p=playbackPlayerEntity();if(p==null)return;UUID id=pf.vehicleId();if(id==null)eject(p);else{EntityPlaybackActor v=entityActors.get(id);if(v!=null&&v.entity().isValid())v.entity().addPassenger(p);else eject(p);}for(Map.Entry<UUID,List<EntityStateFrame>> e:entityFrames.entrySet()){EntityPlaybackActor a=entityActors.get(e.getKey());if(a==null||!a.entity().isValid())continue;EntityStateFrame f=frameAtTick(e.getValue(),tick);if(f==null)continue;UUID vid=f.vehicleId();if(vid==null)eject(a.entity());else{EntityPlaybackActor v=entityActors.get(vid);if(v!=null&&v.entity().isValid()&&v.entity()!=a.entity())v.entity().addPassenger(a.entity());else eject(a.entity());}}}
-    private void initializeBlocks(){for(BlockActionFrame a:blockActions){Location l=transformedBlockLocation(a);if(l==null)continue;try{l.getBlock().setBlockData(Bukkit.createBlockData(a.beforeState()),false);}catch(IllegalArgumentException ignored){}}}
-    private void applyBlockActions(long target){for(BlockActionFrame a:blockActions){if(a.tick()!=target||a.action()==BlockActionFrame.Action.INTERACT)continue;Location l=transformedBlockLocation(a);if(l==null)continue;try{BlockData d=Bukkit.createBlockData(a.afterState());l.getBlock().setBlockData(d,false);}catch(IllegalArgumentException ignored){}}}
+    private void initializeBlocks(){if(!blockInitialization)return;for(BlockActionFrame a:blockActions){Location l=transformedBlockLocation(a);if(l==null)continue;try{l.getBlock().setBlockData(Bukkit.createBlockData(a.beforeState()),false);}catch(IllegalArgumentException ignored){}}}
+    private void applyBlockActions(long target){if(!blockActionsPlayback)return;for(BlockActionFrame a:blockActions){if(a.tick()!=target||a.action()==BlockActionFrame.Action.INTERACT)continue;Location l=transformedBlockLocation(a);if(l==null)continue;try{BlockData d=Bukkit.createBlockData(a.afterState());l.getBlock().setBlockData(d,false);}catch(IllegalArgumentException ignored){}}}
     private Location transformedBlockLocation(BlockActionFrame a){World w=findWorld(a.worldKey(),currentWorld());Vector p=transformer.transformBlockPosition(new Vector(a.x(),a.y(),a.z()));return new Location(w,Math.floor(p.getX()),Math.floor(p.getY()),Math.floor(p.getZ()));}
     private Entity playbackPlayerEntity(){if(entityActor!=null)return entityActor.entity();return fakePlayer==null?null:fakePlayer.getBukkitEntity();} private static void eject(Entity p){Entity v=p.getVehicle();if(v!=null)v.removePassenger(p);} private void ejectPlayer(){Entity p=playbackPlayerEntity();if(p!=null)eject(p);}
     private static long lastTick(List<EntityStateFrame> t){return t.isEmpty()?Long.MIN_VALUE:t.get(t.size()-1).tick();}

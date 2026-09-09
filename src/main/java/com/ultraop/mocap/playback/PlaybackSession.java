@@ -24,9 +24,7 @@ public final class PlaybackSession {
     private boolean paused;
     private boolean stopped;
 
-    public PlaybackSession(RecordingSession recording, Player viewer) {
-        this(recording, viewer, PlaybackModifiers.DEFAULT);
-    }
+    public PlaybackSession(RecordingSession recording, Player viewer) { this(recording, viewer, PlaybackModifiers.DEFAULT); }
 
     public PlaybackSession(RecordingSession recording, Player viewer, PlaybackModifiers modifiers) {
         this.id = UUID.randomUUID();
@@ -34,18 +32,11 @@ public final class PlaybackSession {
         this.viewerPlayerId = viewer.getUniqueId();
         this.frames = recording.getFrames();
         this.modifiers = modifiers;
-
-        if (frames.isEmpty()) {
-            this.fakePlayer = null;
-            this.stopped = true;
-            return;
-        }
-
+        if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
-        String displayName = modifiers.playerName() == null || modifiers.playerName().isBlank()
-                ? recording.getSourcePlayerName() : modifiers.playerName();
+        String displayName = modifiers.playerName() == null || modifiers.playerName().isBlank() ? recording.getSourcePlayerName() : modifiers.playerName();
         this.fakePlayer = FakePlayer.spawn(spawn, recording.getSourcePlayerId(), displayName);
         this.waitTicks = secondsToTicks(modifiers.startDelaySeconds() + modifiers.waitOnStartSeconds());
         if (waitTicks == 0) applyFrame(first);
@@ -60,67 +51,33 @@ public final class PlaybackSession {
     public UUID getViewerPlayerId() { return viewerPlayerId; }
     public FakePlayer getFakePlayer() { return fakePlayer; }
     public PlaybackModifiers getModifiers() { return modifiers; }
-
-    public PlayerStateFrame currentFrame() {
-        if (frames.isEmpty() || tick >= frames.size()) return null;
-        return frames.get((int) tick);
-    }
-
+    public PlayerStateFrame currentFrame() { if (frames.isEmpty() || tick >= frames.size()) return null; return frames.get((int) tick); }
     public void pause() { if (!stopped) paused = true; }
     public void resume() { if (!stopped) paused = false; }
-
-    public void stop() {
-        if (stopped) return;
-        stopped = true;
-        if (fakePlayer != null) fakePlayer.remove();
-    }
+    public void stop() { if (stopped) return; stopped = true; if (fakePlayer != null) fakePlayer.remove(); }
 
     public void advance() {
         if (paused || stopped) return;
-
-        if (waitTicks > 0) {
-            waitTicks--;
-            return;
-        }
-
-        if (waitingForEnd) {
-            if (waitTicks > 0) return;
-            waitingForEnd = false;
-            stop();
-            return;
-        }
-
+        if (waitTicks > 0) { waitTicks--; return; }
+        if (waitingForEnd) { waitingForEnd = false; stop(); return; }
         if (tick >= frames.size()) {
             if (modifiers.loop()) {
-                if (modifiers.waitOnEndSeconds() > 0) {
-                    waitingForEnd = true;
-                    waitTicks = secondsToTicks(modifiers.waitOnEndSeconds());
-                    return;
-                }
-                tick = 0;
-                waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
+                if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
+                tick = 0; waitTicks = secondsToTicks(modifiers.waitOnStartSeconds());
                 if (waitTicks == 0) applyFrame(frames.get(0));
                 return;
             }
-
-            if (modifiers.waitOnEndSeconds() > 0) {
-                waitingForEnd = true;
-                waitTicks = secondsToTicks(modifiers.waitOnEndSeconds());
-                return;
-            }
-            stop();
-            return;
+            if (modifiers.waitOnEndSeconds() > 0) { waitingForEnd = true; waitTicks = secondsToTicks(modifiers.waitOnEndSeconds()); return; }
+            stop(); return;
         }
-
         applyFrame(frames.get((int) tick));
         tick++;
     }
 
     private void applyFrame(PlayerStateFrame frame) {
         fakePlayer.apply(frame);
-        Location transformed = transform(new Location(findWorld(frame.worldKey(), fakePlayer.getBukkitEntity().getWorld()),
-                frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
-        fakePlayer.teleport(transformed);
+        Location transformed = transform(new Location(findWorld(frame.worldKey(), fakePlayer.getBukkitEntity().getWorld()), frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
+        fakePlayer.getBukkitEntity().teleport(transformed);
     }
 
     public Location resolveLocation(Player fallback) {
@@ -131,48 +88,26 @@ public final class PlaybackSession {
     }
 
     private Location transform(Location source) {
-        double x = source.getX();
-        double y = source.getY();
-        double z = source.getZ();
-        double scale = modifiers.sceneScale();
-
-        x *= scale;
-        y *= scale;
-        z *= scale;
-
+        double x = source.getX() * modifiers.sceneScale();
+        double y = source.getY() * modifiers.sceneScale() + modifiers.offsetY();
+        double z = source.getZ() * modifiers.sceneScale();
         double radians = Math.toRadians(modifiers.rotationDegrees());
-        double cos = Math.cos(radians);
-        double sin = Math.sin(radians);
-        double rx = x * cos - z * sin;
-        double rz = x * sin + z * cos;
-
+        double cos = Math.cos(radians), sin = Math.sin(radians);
+        double rx = x * cos - z * sin, rz = x * sin + z * cos;
         switch (modifiers.mirror()) {
             case X -> rx = -rx;
             case Z -> rz = -rz;
             case XZ -> { rx = -rx; rz = -rz; }
             case NONE -> { }
         }
-
-        rx += modifiers.offsetX();
-        y += modifiers.offsetY();
-        rz += modifiers.offsetZ();
-
+        rx += modifiers.offsetX(); rz += modifiers.offsetZ();
         float yaw = source.getYaw() + (float) modifiers.rotationDegrees();
         if (modifiers.mirror() == PlaybackModifiers.Mirror.X) yaw = 180.0f - yaw;
         else if (modifiers.mirror() == PlaybackModifiers.Mirror.Z) yaw = -yaw;
         else if (modifiers.mirror() == PlaybackModifiers.Mirror.XZ) yaw = yaw + 180.0f;
-
         return new Location(source.getWorld(), rx, y, rz, yaw, source.getPitch());
     }
 
-    private static long secondsToTicks(double seconds) {
-        return Math.max(0L, Math.round(seconds * 20.0));
-    }
-
-    private static World findWorld(String worldKey, World fallback) {
-        for (World world : Bukkit.getWorlds()) {
-            if (world.getKey().toString().equals(worldKey)) return world;
-        }
-        return fallback;
-    }
+    private static long secondsToTicks(double seconds) { return Math.max(0L, Math.round(seconds * 20.0)); }
+    private static World findWorld(String worldKey, World fallback) { for (World world : Bukkit.getWorlds()) if (world.getKey().toString().equals(worldKey)) return world; return fallback; }
 }

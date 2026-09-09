@@ -7,6 +7,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerAnimationEvent;
 import org.bukkit.event.player.PlayerAnimationType;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 
 /** Captures discrete actions that are not reliably represented by a 20 TPS state snapshot. */
 public final class RecordingActionListener implements Listener {
@@ -29,8 +30,7 @@ public final class RecordingActionListener implements Listener {
         if (action != Action.LEFT_CLICK_AIR && action != Action.LEFT_CLICK_BLOCK) {
             return;
         }
-        boolean offHand = event.getHand() != null && event.getHand().name().equals("OFF_HAND");
-        manager.markSwing(event.getPlayer(), offHand);
+        manager.markSwing(event.getPlayer(), event.getHand() == EquipmentSlot.OFF_HAND);
     }
 
     @EventHandler

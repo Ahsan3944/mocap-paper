@@ -8,19 +8,22 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
 import java.util.List;
 import java.util.UUID;
 
-/** Tick-driven playback timeline backed by a server-side fake player. */
+/** Tick-driven playback timeline backed by a server-side playback actor. */
 public final class PlaybackSession {
     private final UUID id;
     private final RecordingSession recording;
     private final UUID viewerPlayerId;
     private final List<PlayerStateFrame> frames;
     private final FakePlayer fakePlayer;
+    private final EntityPlaybackActor entityActor;
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
     private final boolean root;
@@ -46,13 +49,27 @@ public final class PlaybackSession {
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
         this.root = root;
         this.transformer = new PositionTransformer(this.modifiers, parentTransformer, calculateRecordingCenter());
-        if (frames.isEmpty()) { this.fakePlayer = null; this.stopped = true; return; }
+        if (frames.isEmpty()) {
+            this.fakePlayer = null;
+            this.entityActor = null;
+            this.stopped = true;
+            return;
+        }
 
         PlayerStateFrame first = frames.get(0);
         World world = findWorld(first.worldKey(), viewer.getWorld());
         Location spawn = transform(new Location(world, first.x(), first.y(), first.z(), first.yaw(), first.pitch()));
-        GameProfile profile = resolveProfile(viewer);
-        this.fakePlayer = FakePlayer.spawn(spawn, profile, this.modifiers.playerScale());
+
+        if (modifiers.playerAsEntity().enabled() && modifiers.playerAsEntity().entityType() != EntityType.PLAYER) {
+            Entity entity = world.spawnEntity(spawn, modifiers.playerAsEntity().entityType());
+            this.fakePlayer = null;
+            this.entityActor = new EntityPlaybackActor(entity, modifiers.playerScale());
+        } else {
+            GameProfile profile = resolveProfile(viewer);
+            this.fakePlayer = FakePlayer.spawn(spawn, profile, this.modifiers.playerScale());
+            this.entityActor = null;
+        }
+
         this.waitTicks = secondsToTicks(this.modifiers.startDelaySeconds() + this.modifiers.waitOnStartSeconds());
         if (waitTicks == 0) applyFrame(first);
     }
@@ -66,6 +83,7 @@ public final class PlaybackSession {
     public boolean isActive() { return !stopped && (!finished || modifiers.loop() || !modifiers.waitForParentEnd()); }
     public UUID getViewerPlayerId() { return viewerPlayerId; }
     public FakePlayer getFakePlayer() { return fakePlayer; }
+    public EntityPlaybackActor getEntityActor() { return entityActor; }
     public PlaybackModifiers getModifiers() { return modifiers; }
     public PlayerStateFrame currentFrame() { return frames.isEmpty() || tick >= frames.size() ? null : frames.get((int) tick); }
     public void pause() { if (!stopped) paused = true; }
@@ -76,6 +94,7 @@ public final class PlaybackSession {
         stopped = true;
         finished = true;
         if (fakePlayer != null) fakePlayer.remove();
+        if (entityActor != null) entityActor.remove();
     }
 
     public void advance() {
@@ -120,10 +139,20 @@ public final class PlaybackSession {
     private boolean shouldSelfStop() { return root || !modifiers.waitForParentEnd(); }
 
     private void applyFrame(PlayerStateFrame frame) {
-        fakePlayer.apply(frame);
-        World world = findWorld(frame.worldKey(), fakePlayer.getBukkitEntity().getWorld());
+        World world = findWorld(frame.worldKey(), currentWorld());
         Location transformed = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
-        fakePlayer.getBukkitEntity().teleport(transformed);
+        if (entityActor != null) {
+            entityActor.apply(frame, transformed);
+        } else {
+            fakePlayer.apply(frame);
+            fakePlayer.getBukkitEntity().teleport(transformed);
+        }
+    }
+
+    private World currentWorld() {
+        if (fakePlayer != null) return fakePlayer.getBukkitEntity().getWorld();
+        if (entityActor != null) return entityActor.entity().getWorld();
+        return Bukkit.getWorlds().get(0);
     }
 
     public Location resolveLocation(Player fallback) {

@@ -19,6 +19,7 @@ public final class ScenePlayback {
     private final PlaybackManager playbackManager;
     private final Player viewer;
     private final String sceneName;
+    private final boolean root;
     private final PlaybackModifiers modifiers;
     private final PositionTransformer transformer;
     private final SceneData data;
@@ -29,11 +30,12 @@ public final class ScenePlayback {
     private int waitTicks;
 
     private ScenePlayback(SceneManager sceneManager, PlaybackManager playbackManager, Player viewer, String sceneName,
-                          PlaybackModifiers modifiers, PositionTransformer transformer, SceneData data) {
+                          boolean root, PlaybackModifiers modifiers, PositionTransformer transformer, SceneData data) {
         this.sceneManager = sceneManager;
         this.playbackManager = playbackManager;
         this.viewer = viewer;
         this.sceneName = sceneName;
+        this.root = root;
         this.modifiers = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
         this.transformer = transformer;
         this.data = data;
@@ -53,7 +55,8 @@ public final class ScenePlayback {
             if (data == null || (isRoot && data.elements().isEmpty())) return null;
             PlaybackModifiers effective = modifiers == null ? PlaybackModifiers.DEFAULT : modifiers;
             PositionTransformer transformer = createTransformer(data, effective, parentTransformer, sceneManager);
-            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName, effective, transformer, data);
+            ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName,
+                    isRoot, effective, transformer, data);
             if (!playback.build(ancestry)) return null;
             return playback;
         } catch (Exception ignored) {
@@ -131,7 +134,7 @@ public final class ScenePlayback {
         int endWait = secondsToTicks(modifiers.waitOnEndSeconds());
         if (endWait > 0) {
             waitTicks = endWait;
-        } else if (modifiers.waitForParentEnd() || sceneName != null) {
+        } else if (root || !modifiers.waitForParentEnd()) {
             stop();
         }
     }

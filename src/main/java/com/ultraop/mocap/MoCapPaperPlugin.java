@@ -1,15 +1,19 @@
 package com.ultraop.mocap;
 
 import com.ultraop.mocap.command.MoCapCommand;
+import com.ultraop.mocap.recording.RecordingManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class MoCapPaperPlugin extends JavaPlugin {
 
+    private RecordingManager recordingManager;
     private MoCapCommand mocapCommand;
 
     @Override
     public void onEnable() {
-        this.mocapCommand = new MoCapCommand(this);
+        this.recordingManager = new RecordingManager(this);
+        this.recordingManager.start();
+        this.mocapCommand = new MoCapCommand(this, recordingManager);
 
         if (getCommand("mocap") == null) {
             getLogger().severe("The /mocap command is not registered in plugin.yml.");
@@ -27,6 +31,9 @@ public final class MoCapPaperPlugin extends JavaPlugin {
     public void onDisable() {
         if (mocapCommand != null) {
             mocapCommand.shutdown();
+        }
+        if (recordingManager != null) {
+            recordingManager.shutdown();
         }
     }
 }

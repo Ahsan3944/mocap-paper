@@ -1,7 +1,13 @@
 package com.ultraop.mocap.playback;
 
 import org.bukkit.Location;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Rotatable;
 import org.bukkit.util.Vector;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /** Center-based transformation chain matching MoCap's PositionTransformer model. */
 public final class PositionTransformer {
@@ -19,15 +25,143 @@ public final class PositionTransformer {
         return transformPos(point.clone(), null);
     }
 
-    /** Transforms a block-space position and applies the configured rounding policy. */
+    /**
+     * Transforms one recorded block into every block occupied by its transformed unit cube.
+     * When scaled playback is disabled, a transformation that expands a block is rejected.
+     */
+    public List<Vector> transformBlockPositions(Vector blockPos, boolean allowScaled) {
+        return transformBlockPositions(List.of(blockPos.clone()), null, allowScaled);
+    }
+
+    /** Compatibility helper for callers that only need one block position. */
     public Vector transformBlockPosition(Vector point) {
-        Vector transformed = transformPos(point.clone(), null);
-        if (modifiers.transformationConfig().roundBlockPos()) {
-            transformed.setX(Math.round(transformed.getX()));
-            transformed.setY(Math.round(transformed.getY()));
-            transformed.setZ(Math.round(transformed.getZ()));
+        List<Vector> positions = transformBlockPositions(point, true);
+        return positions.isEmpty() ? point.clone() : positions.get(0);
+    }
+
+    private List<Vector> transformBlockPositions(List<Vector> input, Vector childCenter, boolean allowScaled) {
+        if (childCenter == null && center == null) throw new IllegalStateException("Both childCenter and center are null");
+        Vector centerToUse = center != null ? center.clone() : childCenter.clone();
+
+        List<Vector> transformed = new ArrayList<>();
+        for (Vector block : input) transformed.addAll(applyToBlockPosition(block, centerToUse));
+        if (transformed.size() > 1 && !allowScaled) return List.of();
+
+        if (parent == null) return transformed;
+        return parent.transformBlockPositions(transformed, centerToUse, allowScaled);
+    }
+
+    private List<Vector> applyToBlockPosition(Vector blockPos, Vector pivot) {
+        if (!modifiers.transformationConfig().roundBlockPos()
+                && (!isIntVec(pivot.clone().multiply(2.0))
+                || !isIntegerRotation(modifiers.rotationDegrees())
+                || !isIntegerScale(pivot, modifiers.sceneScale())
+                || !isIntegerOffset())) {
+            return List.of();
         }
-        return transformed;
+
+        Vector point1 = blockPos.clone();
+        Vector point2 = blockPos.clone().add(new Vector(1, 1, 1));
+        point1 = apply(point1, pivot);
+        point2 = apply(point2, pivot);
+        return voxelizeCube(point1, point2);
+    }
+
+    private List<Vector> voxelizeCube(Vector pos1, Vector pos2) {
+        if (isIntVec(pos1)
+                && pos1.getX() + 1.0 == pos2.getX()
+                && pos1.getY() + 1.0 == pos2.getY()
+                && pos1.getZ() + 1.0 == pos2.getZ()) {
+            return List.of(pos1.clone());
+        }
+
+        int startY = (int) Math.round(pos1.getY());
+        int stopY = (int) Math.round(pos2.getY());
+
+        if (Math.abs(pos1.getX() - pos2.getX()) == Math.abs(pos1.getZ() - pos2.getZ())) {
+            int startX = (int) Math.round(Math.min(pos1.getX(), pos2.getX()));
+            int stopX = (int) Math.round(Math.max(pos1.getX(), pos2.getX()));
+            int startZ = (int) Math.round(Math.min(pos1.getZ(), pos2.getZ()));
+            int stopZ = (int) Math.round(Math.max(pos1.getZ(), pos2.getZ()));
+            List<Vector> result = new ArrayList<>(Math.max(0, (stopX - startX) * (stopZ - startZ) * (stopY - startY)));
+            for (int y = startY; y < stopY; y++) {
+                for (int z = startZ; z < stopZ; z++) {
+                    for (int x = startX; x < stopX; x++) result.add(new Vector(x, y, z));
+                }
+            }
+            return result;
+        }
+
+        double bottomY = pos1.getY();
+        double centerX = (pos1.getX() + pos2.getX()) / 2.0;
+        double centerZ = (pos1.getZ() + pos2.getZ()) / 2.0;
+        Vector pos3 = new Vector(centerX + (pos1.getZ() - centerZ), bottomY,
+                centerZ - (pos1.getX() - centerX));
+        Vector pos4 = new Vector(centerX + (pos2.getZ() - centerZ), bottomY,
+                centerZ - (pos2.getX() - centerX));
+        int minZ = (int) Math.round(Math.min(Math.min(pos1.getZ(), pos2.getZ()), Math.min(pos3.getZ(), pos4.getZ())));
+        int maxZ = (int) Math.round(Math.max(Math.max(pos1.getZ(), pos2.getZ()), Math.max(pos3.getZ(), pos4.getZ())));
+
+        Vector[] vertices = {pos1, pos3, pos2, pos4};
+        List<Vector> result = new ArrayList<>();
+        List<Integer> nodesX = new ArrayList<>(4);
+        for (int z = minZ; z <= maxZ; z++) {
+            nodesX.clear();
+            int j = vertices.length - 1;
+            for (int i = 0; i < vertices.length; i++) {
+                Vector v1 = vertices[i], v2 = vertices[j];
+                if ((z > v1.getZ() && z < v2.getZ()) || (z > v2.getZ() && z < v1.getZ())) {
+                    double x = v1.getX() + ((v2.getX() - v1.getX()) * ((z - v1.getZ()) / (v2.getZ() - v1.getZ())));
+                    nodesX.add((int) Math.round(x));
+                }
+                j = i;
+            }
+            if (nodesX.isEmpty()) continue;
+            int startX = Collections.min(nodesX);
+            int stopX = Collections.max(nodesX);
+            for (int x = startX; x < stopX; x++) {
+                for (int y = startY; y < stopY; y++) result.add(new Vector(x, y, z));
+            }
+        }
+        return result;
+    }
+
+    private static boolean isIntVec(Vector v) {
+        return v.getX() == (int) v.getX()
+                && v.getY() == (int) v.getY()
+                && v.getZ() == (int) v.getZ();
+    }
+
+    private boolean isIntegerRotation(double degrees) {
+        double normalized = Math.abs(degrees % 90.0);
+        return normalized < 1.0E-9 || Math.abs(normalized - 90.0) < 1.0E-9;
+    }
+
+    private boolean isIntegerScale(Vector pivot, double scale) {
+        return isInteger(scale) || (isIntVec(pivot) && isInteger(scale));
+    }
+
+    private boolean isIntegerOffset() {
+        return isInteger(modifiers.offsetX()) && isInteger(modifiers.offsetY()) && isInteger(modifiers.offsetZ());
+    }
+
+    private static boolean isInteger(double value) {
+        return value == (int) value;
+    }
+
+    public BlockData transformBlockState(BlockData data) {
+        if (data == null || isTransformationDefault()) return data;
+        BlockData result = data.clone();
+        double degrees = clampRotation(modifiers.rotationDegrees());
+        int quarterTurns = (int) Math.round(degrees / 90.0);
+        if (quarterTurns != 0) {
+            if (result instanceof Rotatable rotatable) {
+                rotatable.setRotation(rotatable.getRotation().rotate(quarterTurns));
+            } else {
+                result.rotate(org.bukkit.block.Rotation.values()[Math.floorMod(quarterTurns, 4)]);
+            }
+        }
+        return parent == null ? result : parent.transformBlockState(result);
     }
 
     private Vector transformPos(Vector point, Vector childCenter) {

@@ -25,7 +25,7 @@ import java.util.UUID;
 
 /** Persistent storage for saved MoCap recordings. */
 public final class RecordingRepository {
-    private static final int FORMAT_VERSION = 3;
+    private static final int FORMAT_VERSION = 4;
     private final Path directory;
 
     public RecordingRepository(Path directory) { this.directory = directory; }
@@ -39,13 +39,14 @@ public final class RecordingRepository {
             out.writeUTF(session.getSourcePlayerName()); out.writeUTF(session.getStartedAt().toString());
             out.writeBoolean(session.getStoppedAt() != null);
             if (session.getStoppedAt() != null) out.writeUTF(session.getStoppedAt().toString());
-            out.writeInt(session.getFrames().size()); out.writeInt(session.getEntityFrames().size());
+            out.writeInt(session.getFrames().size()); out.writeInt(session.getEntityFrames().size()); out.writeInt(session.getBlockActions().size());
             try (BukkitObjectOutputStream objects = new BukkitObjectOutputStream(out)) {
                 for (PlayerStateFrame frame : session.getFrames()) writeFrame(objects, frame);
                 for (var entry : session.getEntityFrames().entrySet()) {
                     out.writeUTF(entry.getKey().toString()); out.writeInt(entry.getValue().size());
                     for (EntityStateFrame frame : entry.getValue()) writeEntityFrame(objects, frame);
                 }
+                for (BlockActionFrame action : session.getBlockActions()) writeBlockAction(objects, action);
             }
         }
     }
@@ -59,11 +60,12 @@ public final class RecordingRepository {
             UUID id = UUID.fromString(in.readUTF()); UUID playerId = UUID.fromString(in.readUTF());
             String playerName = in.readUTF(); Instant startedAt = Instant.parse(in.readUTF());
             Instant stoppedAt = in.readBoolean() ? Instant.parse(in.readUTF()) : null;
-            int frameCount = in.readInt(); int entityCount = in.readInt();
-            if (frameCount < 0 || frameCount > 10_000_000 || entityCount < 0 || entityCount > 1_000_000)
+            int frameCount = in.readInt(); int entityCount = in.readInt(); int blockCount = in.readInt();
+            if (frameCount < 0 || frameCount > 10_000_000 || entityCount < 0 || entityCount > 1_000_000 || blockCount < 0 || blockCount > 10_000_000)
                 throw new IOException("Invalid recording counts");
             List<PlayerStateFrame> frames = new ArrayList<>(frameCount);
             Map<UUID, List<EntityStateFrame>> entities = new LinkedHashMap<>();
+            List<BlockActionFrame> blockActions = new ArrayList<>(blockCount);
             try (BukkitObjectInputStream objects = new BukkitObjectInputStream(in)) {
                 for (int i = 0; i < frameCount; i++) frames.add(readFrame(objects));
                 for (int i = 0; i < entityCount; i++) {
@@ -73,8 +75,9 @@ public final class RecordingRepository {
                     for (int j = 0; j < count; j++) values.add(readEntityFrame(objects));
                     entities.put(entityId, values);
                 }
+                for (int i = 0; i < blockCount; i++) blockActions.add(readBlockAction(objects));
             }
-            return RecordingSession.loaded(id, playerId, playerName, startedAt, stoppedAt, frames, entities);
+            return RecordingSession.loaded(id, playerId, playerName, startedAt, stoppedAt, frames, entities, blockActions);
         } catch (EOFException e) { throw new IOException("Truncated recording: " + name, e); }
     }
 
@@ -145,9 +148,19 @@ public final class RecordingRepository {
         } catch(ClassNotFoundException|IllegalArgumentException e){throw new IOException("Invalid entity frame",e);}
     }
 
-    private static void writeUuid(DataOutputStream out, UUID uuid) throws IOException {
-        out.writeBoolean(uuid != null); if (uuid != null) { out.writeLong(uuid.getMostSignificantBits()); out.writeLong(uuid.getLeastSignificantBits()); }
+    private static void writeBlockAction(ObjectOutputStream out, BlockActionFrame a) throws IOException {
+        out.writeLong(a.tick()); out.writeUTF(a.worldKey()); out.writeInt(a.x()); out.writeInt(a.y()); out.writeInt(a.z());
+        out.writeUTF(a.action().name()); out.writeUTF(a.beforeState()); out.writeUTF(a.afterState());
     }
+
+    private static BlockActionFrame readBlockAction(ObjectInputStream in) throws IOException {
+        try {
+            long tick=in.readLong(); String world=in.readUTF(); int x=in.readInt(), y=in.readInt(), z=in.readInt();
+            BlockActionFrame.Action action=BlockActionFrame.Action.valueOf(in.readUTF());
+            return new BlockActionFrame(tick, world, x, y, z, action, in.readUTF(), in.readUTF());
+        } catch (IllegalArgumentException e) { throw new IOException("Invalid block action", e); }
+    }
+
     private static void writeUuid(ObjectOutputStream out, UUID uuid) throws IOException {
         out.writeBoolean(uuid != null); if (uuid != null) { out.writeLong(uuid.getMostSignificantBits()); out.writeLong(uuid.getLeastSignificantBits()); }
     }

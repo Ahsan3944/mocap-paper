@@ -4,3 +4,5 @@ recording:
 playback:
   block_actions_playback: true
   block_initialization: true
+settings:
+  drop_from_blocks: false

@@ -11,12 +11,15 @@ import org.bukkit.util.Vector;
 
 /** Applies recorded timelines to a playback entity. */
 public final class EntityPlaybackActor {
+    public static final String MOCAP_ENTITY_TAG = "mocap_entity";
+
     private final Entity entity;
     private final double scale;
 
     public EntityPlaybackActor(Entity entity, double scale) {
         this.entity = entity;
         this.scale = scale;
+        entity.addScoreboardTag(MOCAP_ENTITY_TAG);
         applyScale();
     }
 

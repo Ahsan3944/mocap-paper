@@ -29,6 +29,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
             return;
         }
         this.playbackManager = new PlaybackManager(this, recordingManager);
+        this.playbackManager.setSceneManager(sceneManager);
         this.playbackManager.start();
         this.mocapCommand = new MoCapCommand(this, recordingManager, playbackManager);
         this.rootCommand = new RootMoCapCommand(mocapCommand, sceneManager);

@@ -7,6 +7,7 @@ import com.ultraop.mocap.playback.PlaybackManager;
 import com.ultraop.mocap.recording.RecordingActionListener;
 import com.ultraop.mocap.recording.RecordingBlockListener;
 import com.ultraop.mocap.recording.RecordingManager;
+import com.ultraop.mocap.recording.RecordingRespawnListener;
 import com.ultraop.mocap.scene.SceneManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.IOException;
@@ -19,6 +20,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
         recordingManager=new RecordingManager(this); recordingManager.start();
         getServer().getPluginManager().registerEvents(new RecordingBlockListener(recordingManager),this);
         getServer().getPluginManager().registerEvents(new RecordingActionListener(recordingManager),this);
+        getServer().getPluginManager().registerEvents(new RecordingRespawnListener(recordingManager),this);
         sceneManager=new SceneManager(this,recordingManager); try{sceneManager.start();}catch(IOException e){getLogger().severe("Unable to initialize scene directory: "+e.getMessage());getServer().getPluginManager().disablePlugin(this);return;}
         playbackManager=new PlaybackManager(this,recordingManager);playbackManager.setSceneManager(sceneManager);playbackManager.start();
         mocapCommand=new MoCapCommand(this,recordingManager,playbackManager);rootCommand=new RootMoCapCommand(mocapCommand,sceneManager);parityCommand=new ParityMoCapCommand(rootCommand,playbackManager);

@@ -15,9 +15,11 @@ public final class SceneData {
     public static final int CURRENT_VERSION = 1;
 
     private int version = CURRENT_VERSION;
+    private boolean experimentalVersion;
     private final List<SceneElement> elements = new ArrayList<>();
 
     public int version() { return version; }
+    public boolean experimentalVersion() { return experimentalVersion; }
     public List<SceneElement> elements() { return Collections.unmodifiableList(elements); }
 
     public SceneData add(String name) { elements.add(new SceneElement(name, PlaybackModifiers.DEFAULT)); return this; }
@@ -27,7 +29,8 @@ public final class SceneData {
 
     public JsonObject toJson() {
         JsonObject root = new JsonObject();
-        root.addProperty("version", version);
+        // Upstream uses a negative version number to mark an experimental scene format.
+        root.addProperty("version", experimentalVersion ? -version : version);
         JsonArray array = new JsonArray();
         elements.forEach(e -> array.add(e.toJson()));
         root.add("subscenes", array);
@@ -35,12 +38,17 @@ public final class SceneData {
     }
 
     public static SceneData fromJson(JsonObject root) {
-        if (!root.has("version")) throw new IllegalArgumentException("Scene version not specified");
+        if (root == null || !root.has("version")) throw new IllegalArgumentException("Scene version not specified");
+        int rawVersion = root.get("version").getAsInt();
         SceneData data = new SceneData();
-        data.version = Math.abs(root.get("version").getAsInt());
+        data.version = Math.abs(rawVersion);
+        data.experimentalVersion = rawVersion < 0;
         if (data.version > CURRENT_VERSION) throw new IllegalArgumentException("Unsupported scene version: " + data.version);
         if (!root.has("subscenes") || !root.get("subscenes").isJsonArray()) throw new IllegalArgumentException("Scene subscenes list not found");
-        for (var element : root.getAsJsonArray("subscenes")) data.elements.add(SceneElement.fromJson(element.getAsJsonObject()));
+        for (var element : root.getAsJsonArray("subscenes")) {
+            if (!element.isJsonObject()) throw new IllegalArgumentException("Scene subscene isn't a JSON object");
+            data.elements.add(SceneElement.fromJson(element.getAsJsonObject()));
+        }
         return data;
     }
 

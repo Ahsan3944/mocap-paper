@@ -163,9 +163,19 @@ public final class PlaybackSession {
 
     private void applyEntityFrames() {
         for (Map.Entry<UUID, List<EntityStateFrame>> entry : entityFrames.entrySet()) {
-            EntityStateFrame frame = frameAtTick(entry.getValue(), tick);
-            if (frame == null) continue;
+            List<EntityStateFrame> timeline = entry.getValue();
+            EntityStateFrame frame = frameAtTick(timeline, tick);
             EntityPlaybackActor actor = entityActors.get(entry.getKey());
+            if (frame == null) {
+                // A tracked entity is absent from a tick when tracking stopped. Retain its
+                // historical frames but remove its playback actor once its last frame is passed.
+                if (actor != null && lastTick(timeline) < tick) {
+                    actor.remove();
+                    entityActors.remove(entry.getKey());
+                }
+                continue;
+            }
+
             if (actor == null) {
                 EntityType type = EntityType.fromName(frame.entityType());
                 if (type == null || type == EntityType.PLAYER || !modifiers.entityFilter().matches(type)) continue;
@@ -183,6 +193,10 @@ public final class PlaybackSession {
             Location location = transform(new Location(world, frame.x(), frame.y(), frame.z(), frame.yaw(), frame.pitch()));
             actor.apply(frame, location);
         }
+    }
+
+    private static long lastTick(List<EntityStateFrame> timeline) {
+        return timeline.isEmpty() ? Long.MIN_VALUE : timeline.get(timeline.size() - 1).tick();
     }
 
     private static EntityStateFrame frameAtTick(List<EntityStateFrame> timeline, long targetTick) {

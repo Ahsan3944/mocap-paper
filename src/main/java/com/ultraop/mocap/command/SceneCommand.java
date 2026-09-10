@@ -72,7 +72,7 @@ public final class SceneCommand {
         requireArgs(a,i+1,"transformation");String k=a[i].toLowerCase(Locale.ROOT);return switch(k){
             case "rotation"->m.withRotation(Double.parseDouble(requireAt(a,i+1,"degrees")));
             case "mirror"->m.withMirror(PlaybackModifiers.Mirror.valueOf(requireAt(a,i+1,"mirror").toUpperCase(Locale.ROOT)));
-            case "scale"->{requireArgs(a,i+2,"scale <of_player|of_scene> <scale>");double v=nonNegative(a[i+2]);yield a[i+1].equalsIgnoreCase("of_player")?m.withPlayerScale(v):a[i+1].equalsIgnoreCase("of_scene")?m.withSceneScale(v):throw new IllegalArgumentException("Scale target must be of_player or of_scene.");}
+            case "scale"->{requireArgs(a,i+2,"scale <of_player|of_scene> <scale>");double v=nonNegative(a[i+2]);String target=a[i+1].toLowerCase(Locale.ROOT);if(target.equals("of_player"))yield m.withPlayerScale(v);if(target.equals("of_scene"))yield m.withSceneScale(v);throw new IllegalArgumentException("Scale target must be of_player or of_scene.");}
             case "offset"->{requireArgs(a,i+3,"offset <x> <y> <z>");yield m.withOffset(Double.parseDouble(a[i+1]),Double.parseDouble(a[i+2]),Double.parseDouble(a[i+3]));}
             case "config"->modifyConfig(m,a,i+1);
             default->throw new IllegalArgumentException("Unknown transformation modifier: "+k);

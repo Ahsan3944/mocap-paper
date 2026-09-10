@@ -44,7 +44,7 @@ public final class FakePlayer extends ServerPlayer {
         ServerLevel level = ((CraftWorld) l.getWorld()).getHandle();
         FakePlayer f = new FakePlayer(level, p, invulnerablePlayback);
         f.setPos(l.getX(), l.getY(), l.getZ()); f.setYRot(l.getYaw()); f.setXRot(l.getPitch());
-        level.addNewPlayer(f); f.setScale(s); f.applyPushSetting(); return f;
+        level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity"); f.setScale(s); f.applyPushSetting(); return f;
     }
 
     public void applyPushSetting() {

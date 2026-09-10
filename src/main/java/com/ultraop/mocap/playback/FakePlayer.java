@@ -4,7 +4,6 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -51,7 +50,6 @@ public final class FakePlayer extends ServerPlayer {
         f.setScale(s); f.applyPushSetting();
         GameMode mode = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_creative_game_mode", false) ? GameMode.CREATIVE : GameMode.SURVIVAL;
         f.getBukkitEntity().setGameMode(mode);
-        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.allow_ghosts", true)) f.hideFromPlayerList();
         return f;
     }
 

@@ -10,6 +10,9 @@ import com.ultraop.mocap.recording.RecordingChatListener;
 import com.ultraop.mocap.recording.RecordingManager;
 import com.ultraop.mocap.recording.RecordingRespawnListener;
 import com.ultraop.mocap.scene.SceneManager;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.IOException;
 
@@ -22,6 +25,7 @@ public final class MoCapPaperPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new RecordingActionListener(recordingManager),this);
         getServer().getPluginManager().registerEvents(new RecordingChatListener(recordingManager),this);
         getServer().getPluginManager().registerEvents(new RecordingRespawnListener(recordingManager),this);
+        getServer().getPluginManager().registerEvents(new Listener(){@EventHandler public void onJoin(PlayerJoinEvent e){if(!getConfig().getBoolean("settings.experimental_release_warning",true)||!e.getPlayer().isOp())return;e.getPlayer().sendMessage("§6MoCap Paper is an experimental alpha release. §eUse with caution; report issues on GitHub: §nhttps://github.com/Ahsan3944/mocap-paper§r");e.getPlayer().sendMessage("§7Disable this warning with: §f/mocap settings experimental_release_warning false");}},this);
         sceneManager=new SceneManager(this,recordingManager); try{sceneManager.start();}catch(IOException e){getLogger().severe("Unable to initialize scene directory: "+e.getMessage());getServer().getPluginManager().disablePlugin(this);return;}
         playbackManager=new PlaybackManager(this,recordingManager); playbackManager.setSceneManager(sceneManager); playbackManager.start();
         mocapCommand=new MoCapCommand(this,recordingManager,playbackManager); rootCommand=new RootMoCapCommand(mocapCommand,sceneManager,this,recordingManager,playbackManager); parityCommand=new ParityMoCapCommand(rootCommand,playbackManager);

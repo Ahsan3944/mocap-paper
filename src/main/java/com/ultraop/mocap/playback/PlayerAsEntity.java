@@ -32,6 +32,12 @@ public record PlayerAsEntity(EntityType entityType, String entityNbt) {
         return entityType != null;
     }
 
+    @Override
+    public EntityType entityType() {
+        EntityPlaybackActor.queuePlayerAsEntityNbt(entityNbt);
+        return entityType;
+    }
+
     public String entityId() {
         return entityType == null ? null : entityType.getKey().toString();
     }

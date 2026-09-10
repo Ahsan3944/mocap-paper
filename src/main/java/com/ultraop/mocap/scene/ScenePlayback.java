@@ -64,7 +64,8 @@ public final class ScenePlayback {
             PositionTransformer transformer = createTransformer(data, effective, parentTransformer, sceneManager);
             ScenePlayback playback = new ScenePlayback(sceneManager, playbackManager, viewer, sceneName, isRoot,
                     effective, transformer, data, appendAncestry(ancestry, sceneName));
-            return playback.build(playback.ancestry) ? playback : null;
+            if (!playback.build(playback.ancestry)) { playback.stop(); return null; }
+            return playback;
         } catch (Exception ignored) {
             return null;
         }
@@ -82,20 +83,30 @@ public final class ScenePlayback {
             PlaybackModifiers merged = element.modifiers().mergeWithParent(modifiers);
             if (name.startsWith(".")) {
                 String childName = name.substring(1);
-                if (childName.isBlank() || currentAncestry.contains(childName)) return false;
+                if (childName.isBlank() || currentAncestry.contains(childName)) return failBuild();
                 ScenePlayback child = start(sceneManager, playbackManager, childName, viewer, merged, transformer,
                         false, currentAncestry);
-                if (child == null) return false;
+                if (child == null) return failBuild();
                 children.add(child);
             } else {
                 RecordingSession recording = sceneManager.resolveRecording(element);
-                if (recording == null) return false;
+                if (recording == null) return failBuild();
                 PlaybackSession session = playbackManager.createSubscene(recording, viewer, merged, transformer);
-                if (session == null) return false;
+                if (session == null) return failBuild();
                 recordings.add(session);
             }
         }
         return true;
+    }
+
+    private boolean failBuild() {
+        for (PlaybackSession session : new ArrayList<>(recordings)) session.stop();
+        for (ScenePlayback child : new ArrayList<>(children)) child.stop();
+        recordings.clear();
+        children.clear();
+        stopped = true;
+        finished = true;
+        return false;
     }
 
     private static PositionTransformer createTransformer(SceneData data, PlaybackModifiers modifiers,
@@ -250,7 +261,7 @@ public final class ScenePlayback {
         finished = false;
         stopped = false;
         waitTicks = 0;
-        build(ancestry);
+        if (!build(ancestry)) stopped = true;
     }
 
     public void stop() {

@@ -1,12 +1,15 @@
 package com.ultraop.mocap.command;
 
+import com.ultraop.mocap.playback.EntityFilter;
 import com.ultraop.mocap.playback.PlaybackModifiers;
+import com.ultraop.mocap.playback.PlayerAsEntity;
 import com.ultraop.mocap.playback.PlayerSkin;
 import com.ultraop.mocap.scene.SceneData;
 import com.ultraop.mocap.scene.SceneElement;
 import com.ultraop.mocap.scene.SceneManager;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.EntityType;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -35,7 +38,7 @@ public final class SceneCommand {
         require(a,4,"/mocap scenes add_to <scene_name> <to_add> [wait_on_start] [modifiers]");
         String name=a[2], element=a[3]; if(element.contains("*")){addPattern(s,name,element);return;}
         SceneData scene=requireScene(name); PlaybackModifiers m=PlaybackModifiers.DEFAULT; int i=4;
-        if(i<a.length&&isNumber(a[i])){m=m.withWaitOnStart(nonNegative(a[i++]));}
+        if(i<a.length&&isNumber(a[i]))m=m.withWaitOnStart(nonNegative(a[i++]));
         if(i<a.length)m=modifyModifier(m,a,i);
         scene.add(new SceneElement(element,m));sceneManager.save(name,scene);s.sendMessage(ChatColor.GREEN+"Scene element added: "+element);
     }
@@ -60,9 +63,8 @@ public final class SceneCommand {
             case "transformations"->modifyTransform(m,a,i+1);
             case "player_name"->{requireArgs(a,i+2,"player_name <inherited|blank|set> [name]");String k=a[i+1].toLowerCase(Locale.ROOT);yield switch(k){case "inherited"->m.withPlayerName(null);case "blank"->m.withPlayerName("");case "set"->m.withPlayerName(requireAt(a,i+2,"player name"));default->throw new IllegalArgumentException("Unknown player name mode: "+k);};}
             case "player_skin"->modifySkin(m,a,i+1);
-            case "player_as_entity"->{requireArgs(a,i+2,"player_as_entity <disabled|enabled> [entity]");String k=a[i+1].toLowerCase(Locale.ROOT);if(k.equals("disabled"))yield m.withPlayerAsEntity(com.ultraop.mocap.playback.PlayerAsEntity.DISABLED);if(!k.equals("enabled"))throw new IllegalArgumentException("Mode must be disabled or enabled.");yield m;}
+            case "player_as_entity"->{requireArgs(a,i+1,"player_as_entity <disabled|enabled> [entity] [nbt]");String k=a[i+1].toLowerCase(Locale.ROOT);if(k.equals("disabled"))yield m.withPlayerAsEntity(PlayerAsEntity.DISABLED);if(!k.equals("enabled"))throw new IllegalArgumentException("Mode must be disabled or enabled.");String id=requireAt(a,i+2,"entity");EntityType type=EntityType.fromName(id.startsWith("minecraft:")?id.substring(10):id);if(type==null)throw new IllegalArgumentException("Unknown entity type: "+id);yield m.withPlayerAsEntity(PlayerAsEntity.enabled(type,a.length>i+3?a[i+3]:null));}
             case "entity_filter"->{requireArgs(a,i+2,"entity_filter <disabled|enabled> [filter]");String k=a[i+1].toLowerCase(Locale.ROOT);if(k.equals("disabled"))yield m.withEntityFilter(EntityFilter.disabled());if(!k.equals("enabled"))throw new IllegalArgumentException("Mode must be disabled or enabled.");yield m.withEntityFilter(requireAt(a,i+2,"entity filter"));}
-            case "subscene_name"->m.withPlayerName(m.playerName());
             default->throw new IllegalArgumentException("Unknown modifier group: "+group);
         };
     }

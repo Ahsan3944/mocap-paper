@@ -2,8 +2,13 @@ package com.ultraop.mocap.playback;
 
 import com.ultraop.mocap.recording.EntityStateFrame;
 import com.ultraop.mocap.recording.PlayerStateFrame;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.level.storage.TagValueInput;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
@@ -16,8 +21,9 @@ public final class EntityPlaybackActor {
     public static final String MOCAP_ENTITY_TAG="mocap_entity";
     public enum AfterPlayback { REMOVE, KILL, LEFT_UNTOUCHED, RELEASE_AS_NORMAL }
     private final Entity entity; private final double scale; private final boolean invulnerablePlayback;
-    public EntityPlaybackActor(Entity entity,double scale){this(entity,scale,true);} public EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback){this.entity=entity;this.scale=scale;this.invulnerablePlayback=invulnerablePlayback;entity.addScoreboardTag(MOCAP_ENTITY_TAG);applyScale();}
+    public EntityPlaybackActor(Entity entity,double scale){this(entity,scale,true,null);} public EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback){this(entity,scale,invulnerablePlayback,null);} public EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback,String nbt){this.entity=entity;this.scale=scale;this.invulnerablePlayback=invulnerablePlayback;if(nbt!=null&&!nbt.isBlank())applyNbt(nbt);entity.addScoreboardTag(MOCAP_ENTITY_TAG);applyScale();}
     public Entity entity(){return entity;}
+    private void applyNbt(String nbt){try{CompoundTag tag=TagParser.parseTag(nbt);if(entity.getWorld() instanceof org.bukkit.World world){var level=((CraftWorld)world).getHandle();entity.getClass();((org.bukkit.craftbukkit.entity.CraftEntity)entity).getHandle().load(TagValueInput.create(ProblemReporter.DISCARDING,level.registryAccess(),tag));}}catch(Exception ignored){}}
     public void apply(EntityStateFrame frame,Location location){if(!entity.isValid())return;entity.teleport(location);entity.setRotation(frame.yaw(),frame.pitch());entity.setVelocity(new Vector(frame.velocityX(),frame.velocityY(),frame.velocityZ()));entity.setFireTicks(frame.fireTicks());entity.setGlowing(frame.glowing());entity.setInvisible(frame.invisible());if(entity instanceof LivingEntity living){living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setInvulnerable(invulnerablePlayback||frame.invulnerable());if(frame.health()>0.0)living.setHealth(Math.min(living.getMaxHealth(),frame.health()));if(living.getEquipment()!=null){living.getEquipment().setItemInMainHand(clone(frame.mainHand()));living.getEquipment().setItemInOffHand(clone(frame.offHand()));ItemStack[] armor=frame.armor();if(armor.length>=4){living.getEquipment().setHelmet(clone(armor[0]));living.getEquipment().setChestplate(clone(armor[1]));living.getEquipment().setLeggings(clone(armor[2]));living.getEquipment().setBoots(clone(armor[3]));}}}if(frame.hurt())playHurt();applyScale();}
     public void apply(PlayerStateFrame frame,Location location){if(!entity.isValid())return;entity.teleport(location);entity.setRotation(frame.yaw(),frame.pitch());entity.setVelocity(new Vector(frame.velocityX(),frame.velocityY(),frame.velocityZ()));entity.setFireTicks(frame.fireTicks());entity.setGlowing(frame.glowing());entity.setInvisible(frame.invisible());if(entity instanceof LivingEntity living){living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setInvulnerable(invulnerablePlayback||frame.invulnerable());if(frame.health()>0.0)living.setHealth(Math.min(living.getMaxHealth(),frame.health()));if(living.getEquipment()!=null){living.getEquipment().setItemInMainHand(clone(frame.mainHand()));living.getEquipment().setItemInOffHand(clone(frame.offHand()));ItemStack[] armor=frame.armor();if(armor.length>=4){living.getEquipment().setHelmet(clone(armor[3]));living.getEquipment().setChestplate(clone(armor[2]));living.getEquipment().setLeggings(clone(armor[1]));living.getEquipment().setBoots(clone(armor[0]));}}}if(frame.hurt())playHurt();applyScale();}
     public void playHurt(){if(!invulnerablePlayback||!(entity instanceof LivingEntity living)||!living.isValid())return;boolean oldInv=living.isInvulnerable();double max=living.getMaxHealth();if(max<=0)return;try{living.setInvulnerable(false);living.setHealth(max);living.damage(1.0);}finally{if(living.isValid()&&living.getHealth()>0)living.setHealth(max);living.setInvulnerable(oldInv);}}

@@ -12,7 +12,7 @@ public final class BreakProgressPlayback {
     private BreakProgressPlayback(){}
     public static void send(BreakProgressFrame frame,Location location,int breakerId){
         if(frame==null||location==null||location.getWorld()==null)return;
-        ClientboundBlockDestructionPacket packet=new ClientboundBlockDestructionPacket(breakerId,new BlockPos(frame.x(),frame.y(),frame.z()),frame.progress());
+        ClientboundBlockDestructionPacket packet=new ClientboundBlockDestructionPacket(breakerId,new BlockPos(location.getBlockX(),location.getBlockY(),location.getBlockZ()),frame.progress());
         for(Player player:Bukkit.getOnlinePlayers())if(player.getWorld()==location.getWorld()&&player.getLocation().distanceSquared(location)<=4096.0)try{((CraftPlayer)player).getHandle().connection.send(packet);}catch(Exception ignored){}
     }
 }

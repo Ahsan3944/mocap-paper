@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,17 +46,16 @@ public final class FakePlayer extends ServerPlayer {
         ServerLevel level = ((CraftWorld) l.getWorld()).getHandle();
         FakePlayer f = new FakePlayer(level, p, invulnerablePlayback);
         f.setPos(l.getX(), l.getY(), l.getZ()); f.setYRot(l.getYaw()); f.setXRot(l.getPitch());
-        level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity"); f.setScale(s); f.applyPushSetting();
+        level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity");
+        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.prevent_saving_entities", true)) f.setPersistent(false);
+        f.setScale(s); f.applyPushSetting();
         GameMode mode = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_creative_game_mode", false) ? GameMode.CREATIVE : GameMode.SURVIVAL;
         f.getBukkitEntity().setGameMode(mode);
+        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.allow_ghosts", true)) f.hideFromPlayerList();
         return f;
     }
 
-    public void applyPushSetting() {
-        boolean canPush = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.can_push_entities", true);
-        getBukkitEntity().setCollidable(canPush);
-    }
-
+    public void applyPushSetting() { boolean canPush = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.can_push_entities", true); getBukkitEntity().setCollidable(canPush); }
     public void setScale(double s) { if (!Double.isFinite(s) || s <= 0) return; AttributeInstance i = getBukkitEntity().getAttribute(Attribute.SCALE); if (i != null) i.setBaseValue(s); }
 
     public void apply(PlayerStateAdapter f) {

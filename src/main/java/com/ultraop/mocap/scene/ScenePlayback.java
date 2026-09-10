@@ -269,5 +269,6 @@ public final class ScenePlayback {
     public boolean isStopped() { return stopped; }
     public boolean isFinished() { return finished; }
     public boolean isActive() { return !stopped && (!finished || modifiers.loop() || !modifiers.waitForParentEnd()); }
+    public Player getViewer() { return viewer; }
     public UUID getId() { return id; }
 }

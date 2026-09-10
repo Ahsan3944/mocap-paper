@@ -46,7 +46,7 @@ public final class FakePlayer extends ServerPlayer {
         FakePlayer f = new FakePlayer(level, p, invulnerablePlayback);
         f.setPos(l.getX(), l.getY(), l.getZ()); f.setYRot(l.getYaw()); f.setXRot(l.getPitch());
         level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity");
-        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.prevent_saving_entities", true)) f.setPersistent(false);
+        if (JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.prevent_saving_entities", true)) f.getBukkitEntity().setPersistent(false);
         f.setScale(s); f.applyPushSetting();
         GameMode mode = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_creative_game_mode", false) ? GameMode.CREATIVE : GameMode.SURVIVAL;
         f.getBukkitEntity().setGameMode(mode);

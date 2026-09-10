@@ -5,11 +5,12 @@ import com.ultraop.mocap.recording.PlayerStateFrame;
 import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
-import net.minecraft.util.ProblemReporter;
-import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.phys.Vec3;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
@@ -18,7 +19,6 @@ import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -30,8 +30,9 @@ public final class EntityPlaybackActor {
     public enum AfterPlayback { REMOVE,KILL,LEFT_UNTOUCHED,RELEASE_AS_NORMAL }
     private final Entity entity; private final double scale; private final boolean invulnerablePlayback;
     public static void queuePlayerAsEntityNbt(String nbt){if(nbt==null||nbt.isBlank())QUEUED_PLAYER_AS_ENTITY_NBT.remove();else QUEUED_PLAYER_AS_ENTITY_NBT.set(nbt);} private static String consumePlayerAsEntityNbt(){String nbt=QUEUED_PLAYER_AS_ENTITY_NBT.get();QUEUED_PLAYER_AS_ENTITY_NBT.remove();return nbt;}
-    public EntityPlaybackActor(Entity entity,double scale){this(entity,scale,true);} public EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback){this.entity=entity;this.scale=scale;this.invulnerablePlayback=invulnerablePlayback;String nbt=consumePlayerAsEntityNbt();if(nbt!=null)applyNbt(nbt);entity.setGravity(false);if(entity instanceof Mob mob)mob.setAI(false);entity.addScoreboardTag(MOCAP_ENTITY_TAG);applySavePolicy();applyScale();}
-    private void applySavePolicy(){if(JavaPlugin.getProvidingPlugin(EntityPlaybackActor.class).getConfig().getBoolean("settings.prevent_saving_entities",true))entity.setPersistent(false);} private void applyNbt(String nbt){try{CompoundTag tag=TagParser.parseCompoundFully(nbt);var level=((CraftWorld)entity.getWorld()).getHandle();((CraftEntity)entity).getHandle().load(TagValueInput.create(ProblemReporter.DISCARDING,level.registryAccess(),tag));}catch(Exception ignored){}}
+    public static EntityPlaybackActor spawnFromNbt(org.bukkit.World world,Location location,String nbt,double scale,boolean invulnerablePlayback){if(nbt==null||nbt.isBlank())return null;try{var level=((CraftWorld)world).getHandle();CompoundTag tag=TagParser.parseCompoundFully(nbt);var nms=net.minecraft.world.entity.EntityType.create(tag,level,EntitySpawnReason.MOB_SUMMONED).orElse(null);if(nms==null)return null;nms.moveTo(location.getX(),location.getY(),location.getZ(),location.getYaw(),location.getPitch());nms.setDeltaMovement(Vec3.ZERO);nms.setNoGravity(true);nms.setInvulnerable(invulnerablePlayback);nms.addTag(MOCAP_ENTITY_TAG);if(nms instanceof Mob mob)mob.setNoAi(true);level.addFreshEntity(nms);return new EntityPlaybackActor(nms.getBukkitEntity(),scale,invulnerablePlayback,true);}catch(Exception ignored){return null;}}
+    public EntityPlaybackActor(Entity entity,double scale){this(entity,scale,true);} public EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback){this(entity,scale,invulnerablePlayback,false);} private EntityPlaybackActor(Entity entity,double scale,boolean invulnerablePlayback,boolean nbtSpawned){this.entity=entity;this.scale=scale;this.invulnerablePlayback=invulnerablePlayback;if(!nbtSpawned){String nbt=consumePlayerAsEntityNbt();if(nbt!=null)applyNbt(nbt);entity.setGravity(false);if(entity instanceof Mob mob)mob.setAI(false);entity.addScoreboardTag(MOCAP_ENTITY_TAG);}applySavePolicy();applyScale();}
+    private void applySavePolicy(){if(JavaPlugin.getProvidingPlugin(EntityPlaybackActor.class).getConfig().getBoolean("settings.prevent_saving_entities",true))entity.setPersistent(false);} private void applyNbt(String nbt){try{CompoundTag tag=TagParser.parseCompoundFully(nbt);var level=((CraftWorld)entity.getWorld()).getHandle();((CraftEntity)entity).getHandle().load(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING,level.registryAccess(),tag));}catch(Exception ignored){}}
     public Entity entity(){return entity;}
     public void apply(EntityStateFrame frame,Location location){if(!entity.isValid())return;entity.teleport(location);entity.setRotation(frame.yaw(),frame.pitch());entity.setVelocity(new Vector(frame.velocityX(),frame.velocityY(),frame.velocityZ()));entity.setFireTicks(frame.fireTicks());entity.setGlowing(frame.glowing());entity.setInvisible(frame.invisible());if(entity instanceof LivingEntity living){living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setInvulnerable(invulnerablePlayback||frame.invulnerable());if(frame.health()>0.0)living.setHealth(Math.min(living.getMaxHealth(),frame.health()));if(living.getEquipment()!=null){living.getEquipment().setItemInMainHand(clone(frame.mainHand()));living.getEquipment().setItemInOffHand(clone(frame.offHand()));ItemStack[] armor=frame.armor();if(armor.length>=4){living.getEquipment().setHelmet(clone(armor[0]));living.getEquipment().setChestplate(clone(armor[1]));living.getEquipment().setLeggings(clone(armor[2]));living.getEquipment().setBoots(clone(armor[3]));}}}if(frame.hurt())playHurt();applyScale();sendFluentMovement();}
     public void apply(PlayerStateFrame frame,Location location){if(!entity.isValid())return;entity.teleport(location);entity.setRotation(frame.yaw(),frame.pitch());entity.setVelocity(new Vector(frame.velocityX(),frame.velocityY(),frame.velocityZ()));entity.setFireTicks(frame.fireTicks());entity.setGlowing(frame.glowing());entity.setInvisible(frame.invisible());if(entity instanceof LivingEntity living){living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setInvulnerable(invulnerablePlayback||frame.invulnerable());if(frame.health()>0.0)living.setHealth(Math.min(living.getMaxHealth(),frame.health()));if(living.getEquipment()!=null){living.getEquipment().setItemInMainHand(clone(frame.mainHand()));living.getEquipment().setItemInOffHand(clone(frame.offHand()));ItemStack[] armor=frame.armor();if(armor.length>=4){living.getEquipment().setHelmet(clone(armor[0]));living.getEquipment().setChestplate(clone(armor[1]));living.getEquipment().setLeggings(clone(armor[2]));living.getEquipment().setBoots(clone(armor[3]));}}}if(frame.hurt())playHurt();applyScale();sendFluentMovement();}

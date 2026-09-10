@@ -7,3 +7,4 @@ playback:
 settings:
   quick_discard: true
   drop_from_blocks: false
+  allow_ghosts: true

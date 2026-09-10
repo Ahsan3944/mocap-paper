@@ -1,6 +1,7 @@
 package com.ultraop.mocap.command;
 
 import com.ultraop.mocap.playback.PlaybackModifiers;
+import com.ultraop.mocap.playback.PlayerSkin;
 import com.ultraop.mocap.scene.SceneData;
 import com.ultraop.mocap.scene.SceneElement;
 import com.ultraop.mocap.scene.SceneManager;
@@ -8,236 +9,91 @@ import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Command layer for /mocap scenes. The syntax follows the upstream MoCap command model. */
+/** Command layer for /mocap scenes following the upstream modifier model. */
 public final class SceneCommand {
     private final SceneManager sceneManager;
-
-    public SceneCommand(SceneManager sceneManager) {
-        this.sceneManager = sceneManager;
-    }
+    public SceneCommand(SceneManager sceneManager) { this.sceneManager = sceneManager; }
 
     public void execute(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            usage(sender);
-            return;
-        }
-        try {
-            switch (args[1].toLowerCase(Locale.ROOT)) {
-                case "add" -> add(sender, args);
-                case "copy" -> copy(sender, args);
-                case "rename" -> rename(sender, args);
-                case "remove" -> remove(sender, args);
-                case "add_to" -> addTo(sender, args);
-                case "remove_from" -> removeFrom(sender, args);
-                case "modify" -> modify(sender, args);
-                case "info" -> info(sender, args);
-                case "list" -> list(sender, args);
-                default -> usage(sender);
-            }
-        } catch (IllegalArgumentException e) {
-            sender.sendMessage(ChatColor.RED + e.getMessage());
-        } catch (IOException e) {
-            sender.sendMessage(ChatColor.RED + "Scene file operation failed: " + e.getMessage());
-        }
+        if (args.length < 2) { usage(sender); return; }
+        try { switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "add" -> add(sender,args); case "copy" -> copy(sender,args); case "rename" -> rename(sender,args); case "remove" -> remove(sender,args);
+            case "add_to" -> addTo(sender,args); case "remove_from" -> removeFrom(sender,args); case "modify" -> modify(sender,args); case "info" -> info(sender,args); case "list" -> list(sender,args);
+            default -> usage(sender);
+        }} catch (IllegalArgumentException e) { sender.sendMessage(ChatColor.RED+e.getMessage()); } catch (IOException e) { sender.sendMessage(ChatColor.RED+"Scene file operation failed: "+e.getMessage()); }
+    }
+    private void add(CommandSender s,String[] a)throws IOException{require(a,3,"/mocap scenes add <name>");sceneManager.create(a[2]);s.sendMessage(ChatColor.GREEN+"Scene created: "+a[2]);}
+    private void copy(CommandSender s,String[] a)throws IOException{require(a,4,"/mocap scenes copy <src_name> <dest_name>");s.sendMessage(sceneManager.copy(a[2],a[3])?ChatColor.GREEN+"Scene copied.":ChatColor.RED+"Unable to copy scene.");}
+    private void rename(CommandSender s,String[] a)throws IOException{require(a,4,"/mocap scenes rename <old_name> <new_name>");s.sendMessage(sceneManager.rename(a[2],a[3])?ChatColor.GREEN+"Scene renamed.":ChatColor.RED+"Unable to rename scene.");}
+    private void remove(CommandSender s,String[] a)throws IOException{require(a,3,"/mocap scenes remove <name>");s.sendMessage(sceneManager.remove(a[2])?ChatColor.GREEN+"Scene removed.":ChatColor.RED+"Scene not found.");}
+
+    private void addTo(CommandSender s,String[] a)throws IOException{
+        require(a,4,"/mocap scenes add_to <scene_name> <to_add> [wait_on_start] [modifiers]");
+        String name=a[2], element=a[3]; if(element.contains("*")){addPattern(s,name,element);return;}
+        SceneData scene=requireScene(name); PlaybackModifiers m=PlaybackModifiers.DEFAULT; int i=4;
+        if(i<a.length&&isNumber(a[i])){m=m.withWaitOnStart(nonNegative(a[i++]));}
+        if(i<a.length)m=modifyModifier(m,a,i);
+        scene.add(new SceneElement(element,m));sceneManager.save(name,scene);s.sendMessage(ChatColor.GREEN+"Scene element added: "+element);
+    }
+    private void addPattern(CommandSender s,String name,String pattern)throws IOException{
+        String[] p=pattern.split("\\*",-1);if(p.length!=2)throw new IllegalArgumentException("Invalid scene element pattern.");
+        List<String> candidates=pattern.startsWith(".")?sceneManager.getSceneNames():sceneManager.getRecordingNames();SceneData scene=requireScene(name);int matched=0;
+        for(String c:candidates)if(c.startsWith(p[0])&&c.endsWith(p[1])){scene.add(new SceneElement(c,PlaybackModifiers.DEFAULT));matched++;}
+        if(matched==0){s.sendMessage(ChatColor.RED+"No scene elements matched the pattern.");return;}sceneManager.save(name,scene);s.sendMessage(ChatColor.GREEN+"Added "+matched+" scene element(s).");
+    }
+    private void removeFrom(CommandSender s,String[] a)throws IOException{require(a,4,"/mocap scenes remove_from <scene_name> <element_pos>");SceneData scene=requireScene(a[2]);int p=parsePosition(a[3]);if(!scene.remove(p))throw new IllegalArgumentException("Scene element not found: "+a[3]);sceneManager.save(a[2],scene);s.sendMessage(ChatColor.GREEN+"Scene element removed.");}
+
+    private void modify(CommandSender s,String[] a)throws IOException{
+        require(a,5,"/mocap scenes modify <scene_name> <element_pos> <modifier>");SceneData scene=requireScene(a[2]);int p=parsePosition(a[3]);
+        if(p>scene.elements().size())throw new IllegalArgumentException("Scene element not found: "+a[3]);
+        SceneElement old=scene.elements().get(p-1);PlaybackModifiers m=modifyModifier(old.modifiers(),a,4);List<SceneElement> elements=new ArrayList<>(scene.elements());elements.set(p-1,new SceneElement(old.name(),m));scene.clear();elements.forEach(scene::add);sceneManager.save(a[2],scene);s.sendMessage(ChatColor.GREEN+"Scene element modified.");
     }
 
-    private void add(CommandSender sender, String[] args) throws IOException {
-        require(args, 3, "/mocap scenes add <name>");
-        sceneManager.create(args[2]);
-        sender.sendMessage(ChatColor.GREEN + "Scene created: " + args[2]);
-    }
-
-    private void copy(CommandSender sender, String[] args) throws IOException {
-        require(args, 4, "/mocap scenes copy <src_name> <dest_name>");
-        sender.sendMessage(sceneManager.copy(args[2], args[3])
-                ? ChatColor.GREEN + "Scene copied."
-                : ChatColor.RED + "Unable to copy scene.");
-    }
-
-    private void rename(CommandSender sender, String[] args) throws IOException {
-        require(args, 4, "/mocap scenes rename <old_name> <new_name>");
-        sender.sendMessage(sceneManager.rename(args[2], args[3])
-                ? ChatColor.GREEN + "Scene renamed."
-                : ChatColor.RED + "Unable to rename scene.");
-    }
-
-    private void remove(CommandSender sender, String[] args) throws IOException {
-        require(args, 3, "/mocap scenes remove <name>");
-        sender.sendMessage(sceneManager.remove(args[2])
-                ? ChatColor.GREEN + "Scene removed."
-                : ChatColor.RED + "Scene not found.");
-    }
-
-    private void addTo(CommandSender sender, String[] args) throws IOException {
-        require(args, 4, "/mocap scenes add_to <scene_name> <to_add> [wait_on_start]");
-        String sceneName = args[2];
-        String elementName = args[3];
-        if (elementName.contains("*")) {
-            addPattern(sender, sceneName, elementName);
-            return;
-        }
-        SceneData scene = requireScene(sceneName);
-        double wait = args.length >= 5 ? nonNegative(args[4]) : 0.0;
-        PlaybackModifiers modifiers = PlaybackModifiers.DEFAULT.withWaitOnStart(wait);
-        scene.add(new SceneElement(elementName, modifiers));
-        sceneManager.save(sceneName, scene);
-        sender.sendMessage(ChatColor.GREEN + "Scene element added: " + elementName);
-    }
-
-    private void addPattern(CommandSender sender, String sceneName, String pattern) throws IOException {
-        String[] parts = pattern.split("\\*", -1);
-        if (parts.length != 2) throw new IllegalArgumentException("Invalid scene element pattern.");
-        List<String> candidates = pattern.startsWith(".")
-                ? sceneManager.getSceneNames()
-                : sceneManager.getRecordingNames();
-        int matched = 0;
-        SceneData scene = requireScene(sceneName);
-        for (String candidate : candidates) {
-            if (candidate.startsWith(parts[0]) && candidate.endsWith(parts[1])) {
-                scene.add(new SceneElement(candidate, PlaybackModifiers.DEFAULT));
-                matched++;
-            }
-        }
-        if (matched == 0) {
-            sender.sendMessage(ChatColor.RED + "No scene elements matched the pattern.");
-            return;
-        }
-        sceneManager.save(sceneName, scene);
-        sender.sendMessage(ChatColor.GREEN + "Added " + matched + " scene element(s).");
-    }
-
-    private void removeFrom(CommandSender sender, String[] args) throws IOException {
-        require(args, 4, "/mocap scenes remove_from <scene_name> <element_pos>");
-        SceneData scene = requireScene(args[2]);
-        int position = parsePosition(args[3]);
-        if (!scene.remove(position)) throw new IllegalArgumentException("Scene element not found: " + args[3]);
-        sceneManager.save(args[2], scene);
-        sender.sendMessage(ChatColor.GREEN + "Scene element removed.");
-    }
-
-    private void modify(CommandSender sender, String[] args) throws IOException {
-        require(args, 5, "/mocap scenes modify <scene_name> <element_pos> <modifier>");
-        SceneData scene = requireScene(args[2]);
-        int position = parsePosition(args[3]);
-        if (position < 1 || position > scene.elements().size()) throw new IllegalArgumentException("Scene element not found: " + args[3]);
-        SceneElement element = scene.elements().get(position - 1);
-        PlaybackModifiers modifiers = modifyModifier(element.modifiers(), args, 4);
-        scene.remove(position);
-        scene.add(new SceneElement(element.name(), modifiers));
-        // Preserve ordering: add() above appends, so rebuild the scene in its original order.
-        List<SceneElement> original = new java.util.ArrayList<>(scene.elements());
-        scene.clear();
-        for (int i = 0; i < original.size(); i++) {
-            if (i == original.size() - 1) {
-                // The modified element was appended; move it back to its original position below.
-            }
-        }
-        original.remove(original.size() - 1);
-        for (int i = 0; i < original.size() + 1; i++) {
-            if (i == position - 1) scene.add(new SceneElement(element.name(), modifiers));
-            else scene.add(original.get(i < position - 1 ? i : i - 1));
-        }
-        sceneManager.save(args[2], scene);
-        sender.sendMessage(ChatColor.GREEN + "Scene element modified.");
-    }
-
-    private PlaybackModifiers modifyModifier(PlaybackModifiers m, String[] args, int index) {
-        if (args.length <= index) throw new IllegalArgumentException("Missing modifier.");
-        String[] parts = args[index].split("\\s+");
-        if (parts.length == 0) throw new IllegalArgumentException("Missing modifier.");
-        return switch (parts[0].toLowerCase(Locale.ROOT)) {
-            case "time" -> {
-                if (parts.length < 3) throw new IllegalArgumentException("Usage: time <start_delay|wait_on_start|wait_on_end|wait_for_parent_end|loop> <value>");
-                yield switch (parts[1].toLowerCase(Locale.ROOT)) {
-                    case "start_delay" -> m.withStartDelay(nonNegative(parts[2]));
-                    case "wait_on_start" -> m.withWaitOnStart(nonNegative(parts[2]));
-                    case "wait_on_end" -> m.withWaitOnEnd(nonNegative(parts[2]));
-                    case "wait_for_parent_end" -> m.withWaitForParentEnd(Boolean.parseBoolean(parts[2]));
-                    case "loop" -> m.withLoop(Boolean.parseBoolean(parts[2]));
-                    default -> throw new IllegalArgumentException("Unknown time modifier: " + parts[1]);
-                };
-            }
-            case "transformations" -> {
-                if (parts.length < 3) throw new IllegalArgumentException("Missing transformation value.");
-                yield switch (parts[1].toLowerCase(Locale.ROOT)) {
-                    case "rotation" -> m.withRotation(Double.parseDouble(parts[2]));
-                    case "mirror" -> m.withMirror(PlaybackModifiers.Mirror.valueOf(parts[2].toUpperCase(Locale.ROOT)));
-                    case "scale" -> {
-                        if (parts.length < 4) throw new IllegalArgumentException("Usage: transformations scale <of_player|of_scene> <scale>");
-                        double v = nonNegative(parts[3]);
-                        yield parts[2].equalsIgnoreCase("of_player") ? m.withPlayerScale(v) : m.withSceneScale(v);
-                    }
-                    case "offset" -> {
-                        if (parts.length < 5) throw new IllegalArgumentException("Usage: transformations offset <x> <y> <z>");
-                        yield m.withOffset(Double.parseDouble(parts[2]), Double.parseDouble(parts[3]), Double.parseDouble(parts[4]));
-                    }
-                    default -> throw new IllegalArgumentException("Unknown transformation modifier: " + parts[1]);
-                };
-            }
-            default -> throw new IllegalArgumentException("Unknown modifier group: " + parts[0]);
+    private PlaybackModifiers modifyModifier(PlaybackModifiers m,String[] a,int i){
+        if(i>=a.length)throw new IllegalArgumentException("Missing modifier.");String group=a[i].toLowerCase(Locale.ROOT);
+        return switch(group){
+            case "time"->{requireArgs(a,i+2,"time <start_delay|wait_on_start|wait_on_end|wait_for_parent_end|loop> <value>");String k=a[i+1].toLowerCase(Locale.ROOT);String v=a[i+2];yield switch(k){case "start_delay"->m.withStartDelay(nonNegative(v));case "wait_on_start"->m.withWaitOnStart(nonNegative(v));case "wait_on_end"->m.withWaitOnEnd(nonNegative(v));case "wait_for_parent_end"->m.withWaitForParentEnd(bool(v));case "loop"->m.withLoop(bool(v));default->throw new IllegalArgumentException("Unknown time modifier: "+k);};}
+            case "transformations"->modifyTransform(m,a,i+1);
+            case "player_name"->{requireArgs(a,i+2,"player_name <inherited|blank|set> [name]");String k=a[i+1].toLowerCase(Locale.ROOT);yield switch(k){case "inherited"->m.withPlayerName(null);case "blank"->m.withPlayerName("");case "set"->m.withPlayerName(requireAt(a,i+2,"player name"));default->throw new IllegalArgumentException("Unknown player name mode: "+k);};}
+            case "player_skin"->modifySkin(m,a,i+1);
+            case "player_as_entity"->{requireArgs(a,i+2,"player_as_entity <disabled|enabled> [entity]");String k=a[i+1].toLowerCase(Locale.ROOT);if(k.equals("disabled"))yield m.withPlayerAsEntity(com.ultraop.mocap.playback.PlayerAsEntity.DISABLED);if(!k.equals("enabled"))throw new IllegalArgumentException("Mode must be disabled or enabled.");yield m;}
+            case "entity_filter"->{requireArgs(a,i+2,"entity_filter <disabled|enabled> [filter]");String k=a[i+1].toLowerCase(Locale.ROOT);if(k.equals("disabled"))yield m.withEntityFilter(EntityFilter.disabled());if(!k.equals("enabled"))throw new IllegalArgumentException("Mode must be disabled or enabled.");yield m.withEntityFilter(requireAt(a,i+2,"entity filter"));}
+            case "subscene_name"->m.withPlayerName(m.playerName());
+            default->throw new IllegalArgumentException("Unknown modifier group: "+group);
         };
     }
+    private PlaybackModifiers modifyTransform(PlaybackModifiers m,String[] a,int i){
+        requireArgs(a,i+1,"transformation");String k=a[i].toLowerCase(Locale.ROOT);return switch(k){
+            case "rotation"->m.withRotation(Double.parseDouble(requireAt(a,i+1,"degrees")));
+            case "mirror"->m.withMirror(PlaybackModifiers.Mirror.valueOf(requireAt(a,i+1,"mirror").toUpperCase(Locale.ROOT)));
+            case "scale"->{requireArgs(a,i+2,"scale <of_player|of_scene> <scale>");double v=nonNegative(a[i+2]);yield a[i+1].equalsIgnoreCase("of_player")?m.withPlayerScale(v):a[i+1].equalsIgnoreCase("of_scene")?m.withSceneScale(v):throw new IllegalArgumentException("Scale target must be of_player or of_scene.");}
+            case "offset"->{requireArgs(a,i+3,"offset <x> <y> <z>");yield m.withOffset(Double.parseDouble(a[i+1]),Double.parseDouble(a[i+2]),Double.parseDouble(a[i+3]));}
+            case "config"->modifyConfig(m,a,i+1);
+            default->throw new IllegalArgumentException("Unknown transformation modifier: "+k);
+        };}
+    private PlaybackModifiers modifyConfig(PlaybackModifiers m,String[] a,int i){
+        requireArgs(a,i+1,"config <round_block_pos|recording_center|scene_center|center_offset> ...");var c=m.transformationConfig();String k=a[i].toLowerCase(Locale.ROOT);return switch(k){
+            case "round_block_pos"->m.withTransformationConfig(c.withRoundBlockPos(bool(requireAt(a,i+1,"value"))));
+            case "recording_center"->m.withTransformationConfig(c.withRecordingCenter(PlaybackModifiers.RecordingCenter.valueOf(requireAt(a,i+1,"center").toUpperCase(Locale.ROOT))));
+            case "scene_center"->{String v=requireAt(a,i+1,"scene center");var t=PlaybackModifiers.SceneCenterType.valueOf(v.toUpperCase(Locale.ROOT));yield m.withTransformationConfig(c.withSceneCenter(t,t==PlaybackModifiers.SceneCenterType.COMMON_SPECIFIC?requireAt(a,i+2,"scene element"):null));}
+            case "center_offset"->{requireArgs(a,i+3,"center_offset <x> <y> <z>");yield m.withTransformationConfig(c.withCenterOffset(Double.parseDouble(a[i+1]),Double.parseDouble(a[i+2]),Double.parseDouble(a[i+3])));}
+            default->throw new IllegalArgumentException("Unknown transformation config: "+k);
+        };}
+    private PlaybackModifiers modifySkin(PlaybackModifiers m,String[] a,int i){requireArgs(a,i+1,"player_skin <default|from_player|from_file|from_mineskin> [value]");String k=a[i].toLowerCase(Locale.ROOT);return switch(k){case "default"->m.withPlayerSkin(PlayerSkin.DEFAULT);case "from_player"->m.withPlayerSkin(PlayerSkin.fromPlayer(requireAt(a,i+1,"player name")));case "from_file"->m.withPlayerSkin(PlayerSkin.fromFile(requireAt(a,i+1,"skin filename")));case "from_mineskin"->m.withPlayerSkin(PlayerSkin.fromMineSkin(requireAt(a,i+1,"MineSkin URL")));default->throw new IllegalArgumentException("Unknown player skin source: "+k);};}
 
-    private void info(CommandSender sender, String[] args) throws IOException {
-        require(args, 3, "/mocap scenes info <scene_name> [element_pos]");
-        SceneData scene = requireScene(args[2]);
-        sender.sendMessage(ChatColor.GOLD + "Scene: " + args[2]);
-        sender.sendMessage(ChatColor.GRAY + "Elements: " + scene.elements().size());
-        for (int i = 0; i < scene.elements().size(); i++) {
-            SceneElement e = scene.elements().get(i);
-            sender.sendMessage(ChatColor.GRAY + "  " + (i + 1) + " | " + e.name());
-        }
-        if (args.length >= 4) {
-            int position = parsePosition(args[3]);
-            if (position < 1 || position > scene.elements().size()) throw new IllegalArgumentException("Scene element not found: " + args[3]);
-            SceneElement e = scene.elements().get(position - 1);
-            sender.sendMessage(ChatColor.GRAY + "Element " + position + ": " + e.name());
-            sender.sendMessage(ChatColor.GRAY + "  modifiers: " + e.modifiers());
-        }
-    }
-
-    private void list(CommandSender sender, String[] args) throws IOException {
-        if (args.length >= 3) {
-            SceneData scene = requireScene(args[2]);
-            sender.sendMessage(ChatColor.GOLD + "Scene elements: " + args[2]);
-            for (int i = 0; i < scene.elements().size(); i++) sender.sendMessage(ChatColor.GRAY + "  " + (i + 1) + " | " + scene.elements().get(i).name());
-            return;
-        }
-        List<String> names = sceneManager.getSceneNames();
-        sender.sendMessage(ChatColor.GOLD + "Scenes: " + names.size());
-        names.forEach(name -> sender.sendMessage(ChatColor.GRAY + "  " + name));
-    }
-
-    private SceneData requireScene(String name) throws IOException {
-        SceneData data = sceneManager.load(name);
-        if (data == null) throw new IllegalArgumentException("Scene not found: " + name);
-        return data;
-    }
-
-    private static int parsePosition(String value) {
-        try {
-            int p = Integer.parseInt(value);
-            if (p < 1) throw new NumberFormatException();
-            return p;
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Scene element position must be a positive integer.");
-        }
-    }
-
-    private static double nonNegative(String value) {
-        double v = Double.parseDouble(value);
-        if (!Double.isFinite(v) || v < 0) throw new IllegalArgumentException("Value must be a finite non-negative number.");
-        return v;
-    }
-
-    private static void require(String[] args, int count, String usage) {
-        if (args.length < count) throw new IllegalArgumentException("Usage: " + usage);
-    }
-
-    private static void usage(CommandSender sender) {
-        sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap scenes <add|copy|rename|remove|add_to|remove_from|modify|info|list> ...");
-    }
+    private void info(CommandSender s,String[] a)throws IOException{require(a,3,"/mocap scenes info <scene_name> [element_pos]");SceneData scene=requireScene(a[2]);s.sendMessage(ChatColor.GOLD+"Scene: "+a[2]);s.sendMessage(ChatColor.GRAY+"Elements: "+scene.elements().size());for(int i=0;i<scene.elements().size();i++){SceneElement e=scene.elements().get(i);s.sendMessage(ChatColor.GRAY+"  "+(i+1)+" | "+e.name());}if(a.length>=4){int p=parsePosition(a[3]);if(p>scene.elements().size())throw new IllegalArgumentException("Scene element not found: "+a[3]);s.sendMessage(ChatColor.GRAY+"Element "+p+": "+scene.elements().get(p-1).name());s.sendMessage(ChatColor.GRAY+"  modifiers: "+scene.elements().get(p-1).modifiers());}}
+    private void list(CommandSender s,String[] a)throws IOException{if(a.length>=3){SceneData scene=requireScene(a[2]);s.sendMessage(ChatColor.GOLD+"Scene elements: "+a[2]);for(int i=0;i<scene.elements().size();i++)s.sendMessage(ChatColor.GRAY+"  "+(i+1)+" | "+scene.elements().get(i).name());return;}List<String> n=sceneManager.getSceneNames();s.sendMessage(ChatColor.GOLD+"Scenes: "+n.size());n.forEach(x->s.sendMessage(ChatColor.GRAY+"  "+x));}
+    private SceneData requireScene(String n)throws IOException{SceneData d=sceneManager.load(n);if(d==null)throw new IllegalArgumentException("Scene not found: "+n);return d;}
+    private static int parsePosition(String v){try{int p=Integer.parseInt(v);if(p<1)throw new NumberFormatException();return p;}catch(NumberFormatException e){throw new IllegalArgumentException("Scene element position must be a positive integer.");}}
+    private static double nonNegative(String v){double x=Double.parseDouble(v);if(!Double.isFinite(x)||x<0)throw new IllegalArgumentException("Value must be a finite non-negative number.");return x;}
+    private static boolean bool(String v){if(!v.equalsIgnoreCase("true")&&!v.equalsIgnoreCase("false"))throw new IllegalArgumentException("Value must be true or false.");return Boolean.parseBoolean(v);}
+    private static boolean isNumber(String v){try{nonNegative(v);return true;}catch(RuntimeException e){return false;}}
+    private static String requireAt(String[] a,int i,String label){if(i>=a.length||a[i].isBlank())throw new IllegalArgumentException("Missing "+label+".");return a[i];}
+    private static void requireArgs(String[] a,int end,String usage){if(a.length<=end)throw new IllegalArgumentException("Usage: /mocap scenes modify ... "+usage);}
+    private static void require(String[] a,int count,String usage){if(a.length<count)throw new IllegalArgumentException("Usage: "+usage);}
+    private static void usage(CommandSender s){s.sendMessage(ChatColor.YELLOW+"Usage: /mocap scenes <add|copy|rename|remove|add_to|remove_from|modify|info|list> ...");}
 }

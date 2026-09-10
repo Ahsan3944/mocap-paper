@@ -5,7 +5,37 @@ playback:
   block_actions_playback: true
   block_initialization: true
 settings:
-  quick_discard: true
+  playback_speed: 1.0
+  block_actions_playback: true
+  block_initialization: true
+  block_allow_scaled: false
+  track_entities: "@vehicles;@projectiles;@items"
+  entity_tracking_distance: 128.0
+  play_entities: "*"
+  prevent_tracking_played_entities: true
+  can_push_entities: true
+  assign_dimension: true
+  dimension_source: assigned_or_current
+  start_instantly: false
+  assign_profile: no
+  chat_recording: false
+  chat_playback: true
+  invulnerable_playback: true
+  hit_range: 0.0
+  use_authlib_services: false
+  player_name_handling: ignore_casing
+  start_as_recorded: false
+  entities_after_playback: remove
   drop_from_blocks: false
+  quick_discard: true
   allow_ghosts: true
   pretty_scene_files: true
+  show_tips: true
+  required_extensions: let_extension_decide
+  nbt_recording_mode: filtered
+  fluent_movements: 32.0
+  max_float_pos_value: 1024.0
+  allow_mineskin_requests: true
+  prevent_saving_entities: true
+  use_creative_game_mode: false
+  experimental_release_warning: true

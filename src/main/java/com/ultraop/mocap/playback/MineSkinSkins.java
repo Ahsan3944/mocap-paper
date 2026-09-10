@@ -39,6 +39,7 @@ public final class MineSkinSkins {
         Property cached = CACHE.get(value);
         if (cached != null) return cached;
         if (!verifyUrl(value)) return null;
+        if (!JavaPluginAccess.allowMineSkinRequests()) return null;
         String id = normalize(value);
         try {
             URL url = URI.create(API + id).toURL();
@@ -70,5 +71,12 @@ public final class MineSkinSkins {
         if (url.startsWith(PREFIX_SHORT)) return url.substring(PREFIX_SHORT.length());
         if (url.startsWith(PREFIX_LONG)) return url.substring(PREFIX_LONG.length());
         return null;
+    }
+
+    private static final class JavaPluginAccess {
+        private static boolean allowMineSkinRequests() {
+            return org.bukkit.plugin.java.JavaPlugin.getProvidingPlugin(MineSkinSkins.class)
+                    .getConfig().getBoolean("settings.allow_mineskin_requests", true);
+        }
     }
 }

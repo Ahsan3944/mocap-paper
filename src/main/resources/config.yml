@@ -5,4 +5,5 @@ playback:
   block_actions_playback: true
   block_initialization: true
 settings:
+  quick_discard: true
   drop_from_blocks: false

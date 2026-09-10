@@ -48,12 +48,32 @@ public final class SceneCommand {
         for(String c:candidates)if(c.startsWith(p[0])&&c.endsWith(p[1])){scene.add(new SceneElement(c,PlaybackModifiers.DEFAULT));matched++;}
         if(matched==0){s.sendMessage(ChatColor.RED+"No scene elements matched the pattern.");return;}sceneManager.save(name,scene);s.sendMessage(ChatColor.GREEN+"Added "+matched+" scene element(s).");
     }
-    private void removeFrom(CommandSender s,String[] a)throws IOException{require(a,4,"/mocap scenes remove_from <scene_name> <element_pos>");SceneData scene=requireScene(a[2]);int p=parsePosition(a[3]);if(!scene.remove(p))throw new IllegalArgumentException("Scene element not found: "+a[3]);sceneManager.save(a[2],scene);s.sendMessage(ChatColor.GREEN+"Scene element removed.");}
+
+    private void removeFrom(CommandSender s,String[] a)throws IOException{
+        require(a,4,"/mocap scenes remove_from <scene_name> <element_pos[-expected_name]>");
+        SceneData scene=requireScene(a[2]); ElementSelector selector=parseSelector(a[3]);
+        SceneElement element=requireElement(scene,selector);
+        scene.remove(selector.position());
+        sceneManager.save(a[2],scene);
+        s.sendMessage(ChatColor.GREEN+"Scene element removed: "+element.name());
+    }
 
     private void modify(CommandSender s,String[] a)throws IOException{
-        require(a,5,"/mocap scenes modify <scene_name> <element_pos> <modifier>");SceneData scene=requireScene(a[2]);int p=parsePosition(a[3]);
-        if(p>scene.elements().size())throw new IllegalArgumentException("Scene element not found: "+a[3]);
-        SceneElement old=scene.elements().get(p-1);PlaybackModifiers m=modifyModifier(old.modifiers(),a,4);List<SceneElement> elements=new ArrayList<>(scene.elements());elements.set(p-1,new SceneElement(old.name(),m));scene.clear();elements.forEach(scene::add);sceneManager.save(a[2],scene);s.sendMessage(ChatColor.GREEN+"Scene element modified.");
+        require(a,5,"/mocap scenes modify <scene_name> <element_pos[-expected_name]> <modifier>");
+        SceneData scene=requireScene(a[2]); ElementSelector selector=parseSelector(a[3]);
+        SceneElement old=requireElement(scene,selector);
+        SceneElement updated;
+        if(a[4].equalsIgnoreCase("subscene_name")){
+            String newName=requireAt(a,5,"new subscene name");
+            updated=new SceneElement(newName,old.modifiers());
+        }else{
+            PlaybackModifiers m=modifyModifier(old.modifiers(),a,4);
+            updated=new SceneElement(old.name(),m);
+        }
+        List<SceneElement> elements=new ArrayList<>(scene.elements());
+        elements.set(selector.position()-1,updated);
+        scene.clear(); elements.forEach(scene::add);
+        sceneManager.save(a[2],scene);s.sendMessage(ChatColor.GREEN+"Scene element modified.");
     }
 
     private PlaybackModifiers modifyModifier(PlaybackModifiers m,String[] a,int i){
@@ -87,10 +107,27 @@ public final class SceneCommand {
         };}
     private PlaybackModifiers modifySkin(PlaybackModifiers m,String[] a,int i){requireArgs(a,i+1,"player_skin <default|from_player|from_file|from_mineskin> [value]");String k=a[i].toLowerCase(Locale.ROOT);return switch(k){case "default"->m.withPlayerSkin(PlayerSkin.DEFAULT);case "from_player"->m.withPlayerSkin(PlayerSkin.fromPlayer(requireAt(a,i+1,"player name")));case "from_file"->m.withPlayerSkin(PlayerSkin.fromFile(requireAt(a,i+1,"skin filename")));case "from_mineskin"->m.withPlayerSkin(PlayerSkin.fromMineSkin(requireAt(a,i+1,"MineSkin URL")));default->throw new IllegalArgumentException("Unknown player skin source: "+k);};}
 
-    private void info(CommandSender s,String[] a)throws IOException{require(a,3,"/mocap scenes info <scene_name> [element_pos]");SceneData scene=requireScene(a[2]);s.sendMessage(ChatColor.GOLD+"Scene: "+a[2]);s.sendMessage(ChatColor.GRAY+"Elements: "+scene.elements().size());for(int i=0;i<scene.elements().size();i++){SceneElement e=scene.elements().get(i);s.sendMessage(ChatColor.GRAY+"  "+(i+1)+" | "+e.name());}if(a.length>=4){int p=parsePosition(a[3]);if(p>scene.elements().size())throw new IllegalArgumentException("Scene element not found: "+a[3]);s.sendMessage(ChatColor.GRAY+"Element "+p+": "+scene.elements().get(p-1).name());s.sendMessage(ChatColor.GRAY+"  modifiers: "+scene.elements().get(p-1).modifiers());}}
+    private void info(CommandSender s,String[] a)throws IOException{
+        require(a,3,"/mocap scenes info <scene_name> [element_pos[-expected_name]]");SceneData scene=requireScene(a[2]);s.sendMessage(ChatColor.GOLD+"Scene: "+a[2]);s.sendMessage(ChatColor.GRAY+"Elements: "+scene.elements().size());for(int i=0;i<scene.elements().size();i++){SceneElement e=scene.elements().get(i);s.sendMessage(ChatColor.GRAY+"  "+(i+1)+" | "+e.name());}
+        if(a.length>=4){ElementSelector selector=parseSelector(a[3]);SceneElement e=requireElement(scene,selector);s.sendMessage(ChatColor.GRAY+"Element "+selector.position()+": "+e.name());s.sendMessage(ChatColor.GRAY+"  modifiers: "+e.modifiers());}
+    }
     private void list(CommandSender s,String[] a)throws IOException{if(a.length>=3){SceneData scene=requireScene(a[2]);s.sendMessage(ChatColor.GOLD+"Scene elements: "+a[2]);for(int i=0;i<scene.elements().size();i++)s.sendMessage(ChatColor.GRAY+"  "+(i+1)+" | "+scene.elements().get(i).name());return;}List<String> n=sceneManager.getSceneNames();s.sendMessage(ChatColor.GOLD+"Scenes: "+n.size());n.forEach(x->s.sendMessage(ChatColor.GRAY+"  "+x));}
     private SceneData requireScene(String n)throws IOException{SceneData d=sceneManager.load(n);if(d==null)throw new IllegalArgumentException("Scene not found: "+n);return d;}
-    private static int parsePosition(String v){try{int p=Integer.parseInt(v);if(p<1)throw new NumberFormatException();return p;}catch(NumberFormatException e){throw new IllegalArgumentException("Scene element position must be a positive integer.");}}
+
+    private static ElementSelector parseSelector(String v){
+        int dash=v.indexOf('-');
+        String posText=dash==-1?v:v.substring(0,dash);
+        try{int p=Integer.parseInt(posText);if(p<1)throw new NumberFormatException();return new ElementSelector(p,dash==-1?null:v.substring(dash+1));}
+        catch(NumberFormatException e){throw new IllegalArgumentException("Scene element position must be a positive integer.");}
+    }
+    private static SceneElement requireElement(SceneData scene,ElementSelector selector){
+        int p=selector.position();
+        if(p>scene.elements().size())throw new IllegalArgumentException("Scene element not found: "+p);
+        SceneElement element=scene.elements().get(p-1);
+        if(selector.expectedName()!=null&&!selector.expectedName().equals(element.name()))throw new IllegalArgumentException("Scene element name does not match expected name: "+selector.expectedName());
+        return element;
+    }
+    private record ElementSelector(int position,String expectedName){}
     private static double nonNegative(String v){double x=Double.parseDouble(v);if(!Double.isFinite(x)||x<0)throw new IllegalArgumentException("Value must be a finite non-negative number.");return x;}
     private static boolean bool(String v){if(!v.equalsIgnoreCase("true")&&!v.equalsIgnoreCase("false"))throw new IllegalArgumentException("Value must be true or false.");return Boolean.parseBoolean(v);}
     private static boolean isNumber(String v){try{nonNegative(v);return true;}catch(RuntimeException e){return false;}}

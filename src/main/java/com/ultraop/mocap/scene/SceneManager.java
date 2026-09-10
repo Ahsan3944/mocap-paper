@@ -19,10 +19,12 @@ import java.util.Scanner;
 /** Persistent scene manager with compatibility for the pre-JSON legacy scene format. */
 public final class SceneManager {
     private static final String NULL_TOKEN = "[null]";
+    private final JavaPlugin plugin;
     private final Path directory;
     private final RecordingManager recordingManager;
 
     public SceneManager(JavaPlugin plugin, RecordingManager recordingManager) {
+        this.plugin = plugin;
         this.directory = plugin.getDataFolder().toPath().resolve("scenes");
         this.recordingManager = recordingManager;
     }
@@ -63,7 +65,8 @@ public final class SceneManager {
     public void save(String name, SceneData data) throws IOException {
         validateName(name);
         Files.createDirectories(directory);
-        Files.writeString(path(name), data.toJsonString(true), StandardCharsets.UTF_8);
+        boolean pretty = plugin.getConfig().getBoolean("settings.pretty_scene_files", true);
+        Files.writeString(path(name), data.toJsonString(pretty), StandardCharsets.UTF_8);
     }
 
     public boolean remove(String name) throws IOException { return Files.deleteIfExists(path(name)); }

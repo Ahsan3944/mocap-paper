@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.Scanner;
 
 /** Persistent scene manager with compatibility for the pre-JSON legacy scene format. */
 public final class SceneManager {
@@ -86,58 +87,82 @@ public final class SceneManager {
     }
 
     private SceneData parseLegacyScene(String text) {
-        String[] lines = text.split("\\R", -1);
-        if (lines.length == 0 || lines[0].trim().isEmpty()) throw new IllegalArgumentException("Legacy scene version not specified");
-        try { Integer.parseInt(lines[0].trim()); }
-        catch (NumberFormatException e) { throw new IllegalArgumentException("Invalid scene version: " + lines[0].trim(), e); }
+        try (Scanner scanner = new Scanner(text)) {
+            if (!scanner.hasNext()) throw new IllegalArgumentException("Legacy scene version not specified");
 
-        SceneData scene = new SceneData();
-        for (int i = 1; i < lines.length; i++) {
-            String line = lines[i].trim();
-            if (line.isEmpty()) continue;
-            String[] t = line.split("\\s+");
-            if (t.length == 0) continue;
-            PlaybackModifiers modifiers = PlaybackModifiers.DEFAULT;
-            int p = 1;
+            final int version;
             try {
-                if (p < t.length) modifiers = modifiers.withWaitOnStart(Double.parseDouble(t[p++]));
-                if (p + 2 < t.length) {
-                    double x = Double.parseDouble(t[p++]);
-                    double y = Double.parseDouble(t[p++]);
-                    double z = Double.parseDouble(t[p++]);
-                    modifiers = modifiers.withOffset(x, y, z)
-                            .withTransformationConfig(modifiers.transformationConfig().withRoundBlockPos(true));
+                version = Integer.parseInt(scanner.next());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid legacy scene version", e);
+            }
+
+            // Legacy scene files store one subscene per line after the version token.
+            SceneData scene = new SceneData();
+            if (scanner.hasNextLine()) scanner.nextLine();
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if (line.isBlank()) continue;
+                try (Scanner lineScanner = new Scanner(line)) {
+                    scene.add(parseLegacyElement(lineScanner));
                 }
-                if (p < t.length && !NULL_TOKEN.equals(t[p])) {
-                    String playerName = t[p];
-                    if (playerName.length() <= 16) modifiers = modifiers.withPlayerName(playerName);
-                }
-                p++;
-                if (p < t.length) {
-                    String skinPath = t[p++];
-                    String sourceToken = p < t.length ? t[p] : "0";
-                    if (!NULL_TOKEN.equals(skinPath)) {
-                        int source = Integer.parseInt(sourceToken);
-                        modifiers = modifiers.withPlayerSkin(switch (source) {
-                            case 1 -> PlayerSkin.fromPlayer(skinPath);
-                            case 2 -> PlayerSkin.fromFile(skinPath);
-                            case 3 -> PlayerSkin.fromMineSkin(skinPath);
-                            default -> PlayerSkin.DEFAULT;
-                        });
-                    }
-                    p++;
-                }
-                if (p < t.length && !NULL_TOKEN.equals(t[p])) {
-                    String entityId = t[p];
-                    EntityType type = EntityType.fromName(entityId.startsWith("minecraft:") ? entityId.substring(10) : entityId);
+            }
+            return scene;
+        }
+    }
+
+    private SceneElement parseLegacyElement(Scanner scanner) {
+        if (!scanner.hasNext()) throw new IllegalArgumentException("Legacy scene element name not specified");
+        String elementName = scanner.next();
+        PlaybackModifiers modifiers = PlaybackModifiers.DEFAULT;
+        try {
+            if (scanner.hasNext()) {
+                modifiers = modifiers.withWaitOnStart(Double.parseDouble(scanner.next()));
+            }
+            if (scanner.hasNext()) {
+                double x = Double.parseDouble(scanner.next());
+                double y = Double.parseDouble(scanner.next());
+                double z = Double.parseDouble(scanner.next());
+                modifiers = modifiers.withOffset(x, y, z)
+                        .withTransformationConfig(modifiers.transformationConfig().withRoundBlockPos(true));
+            }
+            modifiers = modifiers.withPlayerName(parseLegacyPlayerName(scanner));
+            modifiers = modifiers.withPlayerSkin(parseLegacyPlayerSkin(scanner));
+
+            if (scanner.hasNext()) {
+                String entityId = scanner.next();
+                if (!NULL_TOKEN.equals(entityId)) {
+                    EntityType type = EntityType.fromName(entityId.startsWith("minecraft:") ? entityId.substring("minecraft:".length()) : entityId);
                     if (type != null) modifiers = modifiers.withPlayerAsEntity(PlayerAsEntity.enabled(type, null));
                 }
-            } catch (RuntimeException ignored) {
-                // Preserve the scene element even when optional legacy modifier data is malformed.
             }
-            scene.add(new SceneElement(t[0], modifiers));
+        } catch (RuntimeException ignored) {
+            // Match upstream legacy compatibility: malformed optional fields do not discard the element.
         }
-        return scene;
+        return new SceneElement(elementName, modifiers);
+    }
+
+    private static String parseLegacyPlayerName(Scanner scanner) {
+        if (!scanner.hasNext()) return null;
+        String value = scanner.next();
+        return !NULL_TOKEN.equals(value) && value.length() <= 16 ? value : null;
+    }
+
+    private static PlayerSkin parseLegacyPlayerSkin(Scanner scanner) {
+        if (!scanner.hasNext()) return PlayerSkin.DEFAULT;
+        String skinPath = scanner.next();
+        int sourceId = 0;
+        if (scanner.hasNext()) {
+            try { sourceId = Integer.parseInt(scanner.next()); }
+            catch (NumberFormatException ignored) { return PlayerSkin.DEFAULT; }
+        }
+        if (NULL_TOKEN.equals(skinPath)) return PlayerSkin.DEFAULT;
+        return switch (sourceId) {
+            case 1 -> PlayerSkin.fromPlayer(skinPath);
+            case 2 -> PlayerSkin.fromFile(skinPath);
+            case 3 -> PlayerSkin.fromMineSkin(skinPath);
+            default -> PlayerSkin.DEFAULT;
+        };
     }
 
     private Path path(String name) { return directory.resolve(name + ".json"); }

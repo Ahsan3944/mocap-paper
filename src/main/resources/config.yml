@@ -8,3 +8,4 @@ settings:
   quick_discard: true
   drop_from_blocks: false
   allow_ghosts: true
+  pretty_scene_files: true

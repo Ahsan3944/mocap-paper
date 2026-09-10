@@ -1,6 +1,9 @@
 package com.ultraop.mocap.recording;
 
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 import com.ultraop.mocap.playback.EntityFilter;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import java.time.Instant;
@@ -10,12 +13,14 @@ import java.util.*;
 public final class RecordingSession {
     public enum State { WAITING_FOR_ACTION, RECORDING, WAITING_FOR_DECISION, CANCELED, DISCARDED, SAVED }
     public enum OnDeath { END_RECORDING, CONTINUE_SYNCED, CONTINUE_SKIP_TICKS, SPLIT_RECORDING }
+    public record AssignedProfile(String name, UUID id, String skinValue, String skinSignature) { }
     private final double entityTrackingDistance; private final EntityFilter trackEntities; private final boolean preventTrackingPlayedEntities;
     private final UUID id,sourcePlayerId; private final String sourcePlayerName; private final Instant startedAt; private final String assignedDimensionKey;
     private final List<PlayerStateFrame> frames; private final Map<UUID,List<EntityStateFrame>> entityFrames; private final List<BlockActionFrame> blockActions; private final List<ChatMessageFrame> chatMessages;
     private final Map<UUID,Integer> trackedLastSeenTick; private final Set<UUID> swingMainHand=new HashSet<>(),swingOffHand=new HashSet<>(),hurt=new HashSet<>();
     private String instantSaveName; private long nextTick; private Instant stoppedAt; private OnDeath onDeath=OnDeath.END_RECORDING; private boolean died; private long diedTick=-1;
     private OnChangeDimension onChangeDimension=OnChangeDimension.END_RECORDING; private String lastWorldKey; private State state=State.WAITING_FOR_ACTION; private boolean requiresSafeDiscard;
+    private String assignProfileMode="no"; private AssignedProfile assignedProfile;
     public RecordingSession(Player p){this(p,128.0,EntityFilter.DEFAULT_TRACK_ENTITIES,true,true);}
     public RecordingSession(Player p,double trackingDistance,EntityFilter filter){this(p,trackingDistance,filter,true,true);}
     public RecordingSession(Player p,double trackingDistance,EntityFilter filter,boolean preventTrackingPlayedEntities){this(p,trackingDistance,filter,preventTrackingPlayedEntities,true);}
@@ -25,12 +30,14 @@ public final class RecordingSession {
     static RecordingSession loaded(UUID id,UUID pid,String pn,Instant start,Instant stop,List<PlayerStateFrame> f,Map<UUID,List<EntityStateFrame>> e){return loaded(id,pid,pn,start,stop,f,e,List.of(),List.of(),null);}
     static RecordingSession loaded(UUID id,UUID pid,String pn,Instant start,Instant stop,List<PlayerStateFrame> f,Map<UUID,List<EntityStateFrame>> e,List<BlockActionFrame> b){return loaded(id,pid,pn,start,stop,f,e,b,List.of(),null);}
     static RecordingSession loaded(UUID id,UUID pid,String pn,Instant start,Instant stop,List<PlayerStateFrame> f,Map<UUID,List<EntityStateFrame>> e,List<BlockActionFrame> b,String assignedDimensionKey){return loaded(id,pid,pn,start,stop,f,e,b,List.of(),assignedDimensionKey);}
-    static RecordingSession loaded(UUID id,UUID pid,String pn,Instant start,Instant stop,List<PlayerStateFrame> f,Map<UUID,List<EntityStateFrame>> e,List<BlockActionFrame> b,List<ChatMessageFrame> chats,String assignedDimensionKey){return new RecordingSession(id,pid,pn,start,stop,f,e,b,chats,128.0,EntityFilter.DEFAULT_TRACK_ENTITIES,true,assignedDimensionKey);}
+    static RecordingSession loaded(UUID id,UUID pid,String pn,Instant start,Instant stop,List<PlayerStateFrame> f,Map<UUID,List<EntityStateFrame>> e, List<BlockActionFrame> b,List<ChatMessageFrame> chats,String assignedDimensionKey){return new RecordingSession(id,pid,pn,start,stop,f,e,b,chats,128.0,EntityFilter.DEFAULT_TRACK_ENTITIES,true,assignedDimensionKey);}
     public UUID getId(){return id;} public UUID getSourcePlayerId(){return sourcePlayerId;} public String getSourcePlayerName(){return sourcePlayerName;} public Instant getStartedAt(){return startedAt;} public Instant getStoppedAt(){return stoppedAt;} public String getAssignedDimensionKey(){return assignedDimensionKey;} public long getDurationTicks(){return frames.size();} public List<PlayerStateFrame> getFrames(){return Collections.unmodifiableList(frames);}
     public Map<UUID,List<EntityStateFrame>> getEntityFrames(){Map<UUID,List<EntityStateFrame>> c=new LinkedHashMap<>();entityFrames.forEach((u,v)->c.put(u,Collections.unmodifiableList(v)));return Collections.unmodifiableMap(c);} public List<BlockActionFrame> getBlockActions(){return Collections.unmodifiableList(blockActions);} public List<ChatMessageFrame> getChatMessages(){return Collections.unmodifiableList(chatMessages);}
     public String getInstantSaveName(){return instantSaveName;} public void setInstantSaveName(String n){instantSaveName=n;} public OnDeath getOnDeath(){return onDeath;} public void setOnDeath(OnDeath v){onDeath=v==null?OnDeath.END_RECORDING:v;} public OnChangeDimension getOnChangeDimension(){return onChangeDimension;} public void setOnChangeDimension(OnChangeDimension v){onChangeDimension=v==null?OnChangeDimension.END_RECORDING:v;}
-    public State getState(){return state;} public boolean isWaitingForAction(){return state==State.WAITING_FOR_ACTION;} public boolean isWaitingForDecision(){return state==State.WAITING_FOR_DECISION;} public boolean requiresSafeDiscard(){return requiresSafeDiscard;}
-    void start(){if(state==State.WAITING_FOR_ACTION)state=State.RECORDING;}
+    public State getState(){return state;} public boolean isWaitingForAction(){return state==State.WAITING_FOR_ACTION;} public boolean isWaitingForDecision(){return state==State.WAITING_FOR_DECISION;} public boolean requiresSafeDiscard(){return requiresSafeDiscard;} public AssignedProfile getAssignedProfile(){return assignedProfile;}
+    void setAssignProfileMode(String mode){assignProfileMode=mode==null?"no":mode.toLowerCase(Locale.ROOT);} void setAssignedProfile(AssignedProfile p){assignedProfile=p;}
+    void start(){if(state==State.WAITING_FOR_ACTION){state=State.RECORDING;if(!"no".equals(assignProfileMode))captureAssignedProfile();}}
+    private void captureAssignedProfile(){try{GameProfile p=((CraftPlayer)BukkitAccess.player(sourcePlayerId)).getProfile();String name=p.name();UUID id="full".equals(assignProfileMode)?p.id():null;Property skin=p.properties().get("textures").stream().findFirst().orElse(null);String value="full".equals(assignProfileMode)&&skin!=null?skin.value():null;String signature="full".equals(assignProfileMode)&&skin!=null?skin.signature():null;assignedProfile=new AssignedProfile(name,id,value,signature);}catch(Exception ignored){assignedProfile=new AssignedProfile(sourcePlayerName,"full".equals(assignProfileMode)?sourcePlayerId:null,null,null);}}
     void stopForDecision(boolean safeDiscard){if(state==State.RECORDING){state=State.WAITING_FOR_DECISION;stop();requiresSafeDiscard=safeDiscard;}else if(state==State.WAITING_FOR_ACTION){state=State.CANCELED;stop();}}
     void discard(){if(state==State.WAITING_FOR_ACTION){state=State.CANCELED;stop();}else if(state==State.WAITING_FOR_DECISION){state=State.DISCARDED;requiresSafeDiscard=false;}}
     void markSaved(){state=State.SAVED;requiresSafeDiscard=false;}
@@ -45,4 +52,5 @@ public final class RecordingSession {
     private void trackEntities(Player p){if(!trackEntities.enabled())return;double max=entityTrackingDistance<0?Double.POSITIVE_INFINITY:entityTrackingDistance*entityTrackingDistance;Set<UUID> seen=new HashSet<>();for(Entity e:p.getWorld().getEntities()){if(e instanceof Player||!e.isValid()||e.getUniqueId().equals(sourcePlayerId))continue;if((entityTrackingDistance>=0&&p.getLocation().distanceSquared(e.getLocation())>max)||(preventTrackingPlayedEntities&&isPlaybackEntity(e))||!trackEntities.matches(e))continue;UUID id=e.getUniqueId();seen.add(id);boolean wasHurt=hurt.remove(id);entityFrames.computeIfAbsent(id,x->new ArrayList<>()).add(EntityStateFrame.capture(e,nextTick,wasHurt));trackedLastSeenTick.put(id,Math.toIntExact(nextTick));}trackedLastSeenTick.keySet().removeIf(u->!seen.contains(u));}
     private static boolean isPlaybackEntity(Entity e){return e.getScoreboardTags().stream().anyMatch(t->t.equals("mocap_entity")||t.equals("mocap:entity"));} private static String worldKey(Player p){return p.getWorld().getKey().toString();}
     void stop(){trackedLastSeenTick.clear();swingMainHand.clear();swingOffHand.clear();hurt.clear();if(stoppedAt==null)stoppedAt=Instant.now();}
+    static final class BukkitAccess { static Player player(UUID id){ return org.bukkit.Bukkit.getPlayer(id); } }
 }

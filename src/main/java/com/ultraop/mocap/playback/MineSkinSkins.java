@@ -8,8 +8,8 @@ import javax.net.ssl.HttpsURLConnection;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /** MineSkin profile-property resolver matching the upstream MoCap URL/API contract. */
@@ -17,30 +17,34 @@ public final class MineSkinSkins {
     private static final String PREFIX_SHORT = "minesk.in/";
     private static final String PREFIX_LONG = "mineskin.org/skins/";
     private static final String API = "https://api.mineskin.org/get/uuid/";
-    private static final Pattern UUID_PATTERN = Pattern.compile("[0-9a-f]{32}");
-    private static final Map<String, Property> CACHE = new ConcurrentHashMap<>();
+    private static final Pattern UUID_PATTERN = Pattern.compile("[0-9a-f]*");
+    private static final int CACHE_SIZE = 5;
+    private static final Map<String, Property> CACHE = new LinkedHashMap<>(CACHE_SIZE + 1, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Property> eldest) {
+            return size() > CACHE_SIZE;
+        }
+    };
 
     private MineSkinSkins() {}
 
-    public static boolean verifyUrl(String value) {
+    public static synchronized boolean verifyUrl(String value) {
         if (value == null || value.isBlank()) return false;
         if (CACHE.containsKey(value)) return true;
         String id = normalize(value);
-        return id != null && UUID_PATTERN.matcher(id).matches();
+        return id != null && UUID_PATTERN.matcher(id).matches() && id.length() == 32;
     }
 
-    public static Property getProperty(String value) {
+    public static synchronized Property getProperty(String value) {
         Property cached = CACHE.get(value);
         if (cached != null) return cached;
+        if (!verifyUrl(value)) return null;
         String id = normalize(value);
-        if (id == null || !UUID_PATTERN.matcher(id).matches()) return null;
         try {
             URL url = URI.create(API + id).toURL();
             HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
             connection.setUseCaches(false);
             connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
             try (InputStream stream = connection.getInputStream()) {
                 JsonObject texture = JsonParser.parseString(new String(stream.readAllBytes()))
                         .getAsJsonObject().getAsJsonObject("data").getAsJsonObject("texture");
@@ -55,7 +59,7 @@ public final class MineSkinSkins {
         }
     }
 
-    public static void clearCache() {
+    public static synchronized void clearCache() {
         CACHE.clear();
     }
 

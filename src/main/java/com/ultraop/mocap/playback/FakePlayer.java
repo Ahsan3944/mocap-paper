@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
@@ -44,7 +45,10 @@ public final class FakePlayer extends ServerPlayer {
         ServerLevel level = ((CraftWorld) l.getWorld()).getHandle();
         FakePlayer f = new FakePlayer(level, p, invulnerablePlayback);
         f.setPos(l.getX(), l.getY(), l.getZ()); f.setYRot(l.getYaw()); f.setXRot(l.getPitch());
-        level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity"); f.setScale(s); f.applyPushSetting(); return f;
+        level.addNewPlayer(f); f.getBukkitEntity().addScoreboardTag("mocap_entity"); f.setScale(s); f.applyPushSetting();
+        GameMode mode = JavaPlugin.getProvidingPlugin(FakePlayer.class).getConfig().getBoolean("settings.use_creative_game_mode", false) ? GameMode.CREATIVE : GameMode.SURVIVAL;
+        f.getBukkitEntity().setGameMode(mode);
+        return f;
     }
 
     public void applyPushSetting() {

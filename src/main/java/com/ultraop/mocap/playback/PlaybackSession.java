@@ -23,6 +23,7 @@ import org.bukkit.util.Vector;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 /** Tick-driven playback timeline backed by server-side playback actors. */
@@ -141,6 +142,10 @@ public final class PlaybackSession {
 
     private GameProfile resolveProfile(Player viewer) {
         PlayerSkin s = modifiers.playerSkin();
+        if (s.isSkinList()) {
+            PlayerSkin resolved = SkinListRepository.loadRandom(targetWorld.getWorldFolder().toPath(), s.path(), new Random());
+            if (resolved != null) s = resolved;
+        }
         if (s.source() == PlayerSkin.Source.FROM_PLAYER) { Player p = findPlayerByName(s.path()); if (p != null) return ((CraftPlayer) p).getProfile(); }
         if (s.source() == PlayerSkin.Source.FROM_MINESKIN) { Property p = MineSkinSkins.getProperty(s.path()); if (p != null) { GameProfile g = new GameProfile(UUID.randomUUID(), modifiers.playerName() == null ? "MoCap" : modifiers.playerName()); g.properties().put("textures", p); return g; } }
         if (s.source() == PlayerSkin.Source.DEFAULT && modifiers.playerName() != null) { Player p = findPlayerByName(modifiers.playerName()); if (p != null) return ((CraftPlayer) p).getProfile(); }

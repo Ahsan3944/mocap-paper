@@ -6,11 +6,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-/**
- * Command and scene-file representation of MoCap's player_skin modifier.
- * Resolution is intentionally kept separate from the value object so scene
- * loading remains deterministic and does not perform network requests.
- */
+/** Command and scene-file representation of MoCap's player_skin modifier. */
 public record PlayerSkin(Source source, String path) {
     private static final String MINESKIN_URL_PREFIX1 = "minesk.in/";
     private static final String MINESKIN_URL_PREFIX2 = "mineskin.org/skins/";
@@ -27,38 +23,17 @@ public record PlayerSkin(Source source, String path) {
 
     public PlayerSkin {
         source = Objects.requireNonNull(source, "source");
-        if (source == Source.DEFAULT && path != null) {
-            throw new IllegalArgumentException("Default player skin cannot have a path");
-        }
-        if (source != Source.DEFAULT && (path == null || path.isBlank())) {
-            throw new IllegalArgumentException("Player skin path cannot be blank");
-        }
+        if (source == Source.DEFAULT && path != null) throw new IllegalArgumentException("Default player skin cannot have a path");
+        if (source != Source.DEFAULT && (path == null || path.isBlank())) throw new IllegalArgumentException("Player skin path cannot be blank");
         if (source == Source.FROM_MINESKIN) validateMineSkinUrl(path);
     }
 
-    public static PlayerSkin fromPlayer(String playerName) {
-        return new PlayerSkin(Source.FROM_PLAYER, playerName);
-    }
-
-    public static PlayerSkin fromFile(String filename) {
-        return new PlayerSkin(Source.FROM_FILE, filename);
-    }
-
-    public static PlayerSkin fromMineSkin(String url) {
-        return new PlayerSkin(Source.FROM_MINESKIN, url);
-    }
-
-    public boolean isDefault() {
-        return source == Source.DEFAULT;
-    }
-
-    public boolean isSkinList() {
-        return source == Source.FROM_FILE && path != null && path.startsWith("skin_list:");
-    }
-
-    public PlayerSkin mergeWithParent(PlayerSkin parent) {
-        return isDefault() && parent != null ? parent : this;
-    }
+    public static PlayerSkin fromPlayer(String playerName) { return new PlayerSkin(Source.FROM_PLAYER, playerName); }
+    public static PlayerSkin fromFile(String filename) { return new PlayerSkin(Source.FROM_FILE, filename); }
+    public static PlayerSkin fromMineSkin(String url) { return new PlayerSkin(Source.FROM_MINESKIN, url); }
+    public boolean isDefault() { return source == Source.DEFAULT; }
+    public boolean isSkinList() { return source == Source.FROM_FILE && path != null && path.startsWith("list/"); }
+    public PlayerSkin mergeWithParent(PlayerSkin parent) { return isDefault() && parent != null ? parent : this; }
 
     public JsonObject toJson() {
         JsonObject json = new JsonObject();
@@ -97,8 +72,6 @@ public record PlayerSkin(Source source, String path) {
         if (url.startsWith(MINESKIN_URL_PREFIX1)) url = url.substring(MINESKIN_URL_PREFIX1.length());
         else if (url.startsWith(MINESKIN_URL_PREFIX2)) url = url.substring(MINESKIN_URL_PREFIX2.length());
         else throw new IllegalArgumentException("Invalid MineSkin URL: " + value);
-        if (url.length() != 32 || !MINESKIN_UUID_PATTERN.matcher(url).matches()) {
-            throw new IllegalArgumentException("Invalid MineSkin URL: " + value);
-        }
+        if (url.length() != 32 || !MINESKIN_UUID_PATTERN.matcher(url).matches()) throw new IllegalArgumentException("Invalid MineSkin URL: " + value);
     }
 }

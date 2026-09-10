@@ -18,6 +18,7 @@ public final class SkinListRepository {
         if (name.isBlank() || !name.matches("[A-Za-z0-9._-]+")) return null;
         Path file = worldFolder.resolve("mocap_files").resolve("skins").resolve("list").resolve(name + ".txt").normalize();
         Path root = worldFolder.resolve("mocap_files").resolve("skins").resolve("list").normalize();
+        try { Files.createDirectories(root); } catch (IOException ignored) { return null; }
         if (!file.startsWith(root) || !Files.isRegularFile(file)) return null;
         return resolve(file, root, random, new ArrayList<>());
     }
@@ -34,16 +35,10 @@ public final class SkinListRepository {
                 String[] parts = line.split(" ", 2);
                 if (parts.length != 2) return null;
                 PlayerSkin.Source source;
-                try {
-                    source = PlayerSkin.Source.valueOf(parts[0].toUpperCase(Locale.ROOT));
-                } catch (IllegalArgumentException ignored) {
-                    return null;
-                }
-                try {
-                    skins.add(new PlayerSkin(source, parts[1]));
-                } catch (IllegalArgumentException ignored) {
-                    return null;
-                }
+                try { source = PlayerSkin.Source.valueOf(parts[0].toUpperCase(Locale.ROOT)); }
+                catch (IllegalArgumentException ignored) { return null; }
+                try { skins.add(new PlayerSkin(source, parts[1])); }
+                catch (IllegalArgumentException ignored) { return null; }
             }
             if (skins.isEmpty()) return null;
             PlayerSkin selected = skins.get(random.nextInt(skins.size()));

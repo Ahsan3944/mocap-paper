@@ -15,14 +15,14 @@ public final class SkinModifierCommand {
 
     public boolean execute(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) { sender.sendMessage(ChatColor.RED + "A player is required for playback modifiers."); return true; }
-        if (args.length < 6) { sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback modifiers set player_skin <from_player|from_file|from_mineskin|default> <value>"); return true; }
+        if (args.length < 6) { sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap playback modifiers set player_skin <from_player|from_file|from_mineskin|default> [value]"); return true; }
         String mode = args[5].toLowerCase();
         try {
             PlayerSkin skin = switch (mode) {
                 case "default" -> PlayerSkin.DEFAULT;
-                case "from_player" -> PlayerSkin.fromPlayer(args[6]);
-                case "from_file" -> PlayerSkin.fromFile(args[6]);
-                case "from_mineskin" -> PlayerSkin.fromMineSkin(args[6]);
+                case "from_player" -> PlayerSkin.fromPlayer(require(args, 6, "player name"));
+                case "from_file" -> PlayerSkin.fromFile(require(args, 6, "skin filename"));
+                case "from_mineskin" -> PlayerSkin.fromMineSkin(require(args, 6, "MineSkin URL"));
                 default -> throw new IllegalArgumentException("Unknown player skin source: " + args[5]);
             };
             PlaybackModifiers current = playbackManager.getModifiers(player);
@@ -30,6 +30,11 @@ public final class SkinModifierCommand {
             sender.sendMessage(ChatColor.GREEN + "Player skin modifier updated.");
         } catch (IllegalArgumentException e) { sender.sendMessage(ChatColor.RED + e.getMessage()); }
         return true;
+    }
+
+    private static String require(String[] args, int index, String label) {
+        if (args.length <= index || args[index].isBlank()) throw new IllegalArgumentException("Missing " + label + ".");
+        return args[index];
     }
 
     public java.util.List<String> suggest(String input) { return suggestions.get(input); }

@@ -2,6 +2,7 @@ package com.ultraop.mocap.command;
 
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 /** Command layer for /mocap misc. */
 public final class MiscCommand {
@@ -13,9 +14,18 @@ public final class MiscCommand {
             case "clear_cache" -> { skinSuggestions.clear(); sender.sendMessage(ChatColor.GREEN + "MoCap caches cleared."); }
             case "refresh_suggestions" -> { skinSuggestions.refresh(); sender.sendMessage(ChatColor.GREEN + "MoCap command suggestions refreshed."); }
             case "extensions" -> sender.sendMessage(ChatColor.GRAY + "No MoCap extensions are loaded.");
-            case "sync" -> sender.sendMessage(ChatColor.RED + "Sync is not available on the Paper port.");
+            case "sync" -> sync(sender, args);
             default -> usage(sender);
         }
+    }
+    private void sync(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) { sender.sendMessage(ChatColor.RED + "A player is required for sync."); return; }
+        if (args.length < 3) { sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap misc sync <enable|disable>"); return; }
+        if (args[2].equalsIgnoreCase("enable") || args[2].equalsIgnoreCase("disable")) {
+            boolean enabled = args[2].equalsIgnoreCase("enable");
+            boolean old = PlaybackSynchronization.set(player.getUniqueId(), enabled);
+            sender.sendMessage(ChatColor.GREEN + "Playback synchronization " + (enabled ? "enabled" : "disabled") + (old == enabled ? " (unchanged)." : "."));
+        } else sender.sendMessage(ChatColor.RED + "Mode must be enable or disable.");
     }
     private void usage(CommandSender sender) { sender.sendMessage(ChatColor.YELLOW + "Usage: /mocap misc <sync|clear_cache|refresh_suggestions|extensions>"); }
 }

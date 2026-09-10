@@ -1,12 +1,12 @@
 package com.ultraop.mocap.recording;
 
+import com.ultraop.mocap.playback.EntityPlaybackActor;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Pose;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
-
 import java.util.UUID;
 
 /** Immutable per-tick snapshot of a tracked non-player entity. */
@@ -17,6 +17,10 @@ public record EntityStateFrame(
         Pose pose, float fallDistance, int fireTicks, boolean invisible, boolean glowing,
         boolean invulnerable, double health, ItemStack mainHand, ItemStack offHand,
         ItemStack[] armor, UUID vehicleId, boolean hurt, String nbt) {
+    @Override public String entityType(){
+        EntityPlaybackActor.queuePlayerAsEntityNbt(nbt);
+        return entityType;
+    }
     public EntityStateFrame(long tick,UUID entityId,String entityType,String worldKey,double x,double y,double z,float yaw,float pitch,double velocityX,double velocityY,double velocityZ,Pose pose,float fallDistance,int fireTicks,boolean invisible,boolean glowing,boolean invulnerable,double health,ItemStack mainHand,ItemStack offHand,ItemStack[] armor,UUID vehicleId){this(tick,entityId,entityType,worldKey,x,y,z,yaw,pitch,velocityX,velocityY,velocityZ,pose,fallDistance,fireTicks,invisible,glowing,invulnerable,health,mainHand,offHand,armor,vehicleId,false,null);}
     public EntityStateFrame(long tick,UUID entityId,String entityType,String worldKey,double x,double y,double z,float yaw,float pitch,double velocityX,double velocityY,double velocityZ,Pose pose,float fallDistance,int fireTicks,boolean invisible,boolean glowing,boolean invulnerable,double health,ItemStack mainHand,ItemStack offHand,ItemStack[] armor,UUID vehicleId,boolean hurt){this(tick,entityId,entityType,worldKey,x,y,z,yaw,pitch,velocityX,velocityY,velocityZ,pose,fallDistance,fireTicks,invisible,glowing,invulnerable,health,mainHand,offHand,armor,vehicleId,hurt,null);}
     public static EntityStateFrame capture(Entity entity, long tick, boolean hurt) { return capture(entity,tick,hurt,null); }

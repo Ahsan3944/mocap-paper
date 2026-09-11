@@ -1,13 +1,4 @@
 from pathlib import Path
-import re
-
-
-def replace(path, old, new):
-    p = Path(path)
-    s = p.read_text()
-    if old not in s:
-        raise SystemExit(f'pattern not found in {path}: {old[:80]}')
-    p.write_text(s.replace(old, new, 1))
 
 # Player frames: parity with upstream SET_ARROW_COUNT (arrows stuck in body + bee stingers).
 p = 'src/main/java/com/ultraop/mocap/recording/PlayerStateFrame.java'
@@ -15,7 +6,7 @@ s = Path(p).read_text()
 s = s.replace('boolean spectator,boolean closeContainer) implements', 'boolean spectator,boolean closeContainer,int arrowCount,int stingerCount) implements', 1)
 s = s.replace('false,false);}\n    public PlayerStateFrame(long tick', 'false,false,0,0);}\n    public PlayerStateFrame(long tick', 1)
 s = s.replace('activeItemRemainingTime,false,false);}\n    public static PlayerStateFrame capture', 'activeItemRemainingTime,false,false,0,0);}\n    public static PlayerStateFrame capture', 1)
-s = s.replace('player.getGameMode()==org.bukkit.GameMode.SPECTATOR,closeContainer);', 'player.getGameMode()==org.bukkit.GameMode.SPECTATOR,closeContainer,player.getArrowsStuck(),player.getBeeStingerCount());', 1)
+s = s.replace('player.getGameMode()==org.bukkit.GameMode.SPECTATOR,closeContainer);', 'player.getGameMode()==org.bukkit.GameMode.SPECTATOR,closeContainer,player.getArrowsInBody(),player.getBeeStingersInBody());', 1)
 Path(p).write_text(s)
 
 # Entity frames: same state is an upstream comparable action for every LivingEntity.
@@ -24,17 +15,16 @@ s = Path(p).read_text()
 s = s.replace('UUID vehicleId, boolean hurt, String nbt)', 'UUID vehicleId, boolean hurt, String nbt, int arrowCount, int stingerCount)', 1)
 s = s.replace('vehicleId,false,null);}', 'vehicleId,false,null,0,0);}', 1)
 s = s.replace('vehicleId,hurt,null);}', 'vehicleId,hurt,null,0,0);}', 1)
-s = s.replace('vehicleId,hurt,nbt);', 'vehicleId,hurt,nbt,living==null?0:living.getArrowsStuck(),living==null?0:living.getBeeStingerCount());', 1)
+s = s.replace('vehicleId,hurt,nbt);', 'vehicleId,hurt,nbt,living==null?0:living.getArrowsInBody(),living==null?0:living.getBeeStingersInBody());', 1)
 Path(p).write_text(s)
 
 # Playback applies both values every state frame.
 p = 'src/main/java/com/ultraop/mocap/playback/EntityPlaybackActor.java'
 s = Path(p).read_text()
 needle = 'living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setInvulnerable'
-replacement = 'living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setArrowsStuck(frame.arrowCount());living.setBeeStingerCount(frame.stingerCount());living.setInvulnerable'
-count = s.count(needle)
-if count != 2:
-    raise SystemExit(f'expected 2 playback frame sites, found {count}')
+replacement = 'living.setPose(frame.pose());living.setFallDistance(frame.fallDistance());living.setArrowsInBody(frame.arrowCount());living.setBeeStingersInBody(frame.stingerCount());living.setInvulnerable'
+if s.count(needle) != 2:
+    raise SystemExit('expected two playback frame sites')
 s = s.replace(needle, replacement)
 Path(p).write_text(s)
 

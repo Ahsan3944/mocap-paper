@@ -130,7 +130,7 @@ public final class NonPlayerEntityData {
         // Important: the target upstream v1.4-alpha-10 implementation does NOT use
         // rollingAmplitude/rollingDirection here. It records AbstractMinecart's
         // hurt time, hurt direction and damage under int1/int2/float1.
-        if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
+        if (entity instanceof org.bukkit.entity.Minecart minecart) {
             putInt(data, "int1", minecart, "getHurtTime");
             putInt(data, "int2", minecart, "getHurtDir");
             putFloat(data, "float1", minecart, "getDamage");
@@ -211,7 +211,7 @@ public final class NonPlayerEntityData {
                 if (data.contains("float1")) invoke(handle, "setDamage", data.getFloatOr("float1", 0));
             }
 
-            if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
+            if (entity instanceof org.bukkit.entity.Minecart minecart) {
                 setInt(minecart, "setHurtTime", data, "int1");
                 setInt(minecart, "setHurtDir", data, "int2");
                 if (data.contains("float1")) invoke(minecart, "setDamage", data.getFloatOr("float1", 0));
@@ -289,7 +289,8 @@ public final class NonPlayerEntityData {
         }
         // Bukkit fallback for Paper mappings where the NMS inventory accessor is unavailable.
         try {
-            horse.getInventory().setSaddle(saddled ? org.bukkit.Material.SADDLE.createItemStack() : null);
+            if (saddled) horse.getInventory().setSaddle(new org.bukkit.inventory.ItemStack(org.bukkit.Material.SADDLE));
+            else horse.getInventory().setSaddle(null);
         } catch (Exception ignored) {
         }
     }

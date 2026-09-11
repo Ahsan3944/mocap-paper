@@ -8,43 +8,440 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.TagParser;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.entity.AbstractHorse;
 import org.bukkit.entity.Ageable;
 import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Boat;
+import org.bukkit.entity.Camel;
 import org.bukkit.entity.ChestedHorse;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Llama;
-import org.bukkit.entity.Minecart;
-import org.bukkit.entity.Camel;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 
 /** Compact transient equivalent of upstream SET_NON_PLAYER_ENTITY_DATA and SET_EFFECT_PARTICLES. */
 public final class NonPlayerEntityData {
-    public static final String KEY="mocap_non_player_entity_data";
-    private NonPlayerEntityData(){}
-    public static String attach(Entity entity,String nbt){CompoundTag d=capture(entity,nbt);if(d==null)return nbt;try{CompoundTag base=nbt==null?new CompoundTag():TagParser.parseCompoundFully(nbt);base.put(KEY,d);return base.toString();}catch(Exception ignored){return "MOCAP_NP:"+d;}}
-    public static boolean isOnly(String nbt){return nbt!=null&&nbt.startsWith("MOCAP_NP:");}
-    public static CompoundTag extract(String nbt){if(nbt==null||nbt.isBlank())return null;try{if(isOnly(nbt))return TagParser.parseCompoundFully(nbt.substring(9));return TagParser.parseCompoundFully(nbt).getCompound(KEY).orElse(null);}catch(Exception ignored){return null;}}
-    public static String strip(String nbt){if(nbt==null||nbt.isBlank()||isOnly(nbt))return null;try{CompoundTag base=TagParser.parseCompoundFully(nbt);base.remove(KEY);return base.toString();}catch(Exception ignored){return nbt;}}
-    private static CompoundTag capture(Entity e,String nbt){CompoundTag d=new CompoundTag();boolean used=false;if(e instanceof Ageable a){d.putBoolean("flag2",a.getAge()<0);used=true;}if(e instanceof AbstractHorse h){d.putByte("byte1",horseFlags(h));used=true;try{CompoundTag base=nbt==null?null:TagParser.parseCompoundFully(nbt);if(base!=null&&base.contains("Variant"))d.putInt("variant",base.getIntOr("Variant",0));}catch(Exception ignored){}}if(e instanceof ChestedHorse h){d.putBoolean("flag1",h.isCarryingChest());used=true;}if(e instanceof Camel c){Boolean v=invokeBoolean(((CraftEntity)c).getHandle(),"isDashing");if(v!=null)d.putBoolean("flag1",v);used=true;}if(e instanceof Boat){Object h=((CraftEntity)e).getHandle();Boolean right=invokeBoolean(h,"getPaddleState",1),left=invokeBoolean(h,"getPaddleState",0);if(right!=null)d.putBoolean("flag2",right);if(left!=null)d.putBoolean("flag1",left);putInt(d,"int1",h,"getHurtTime");putInt(d,"int2",h,"getHurtDir");putInt(d,"int3",h,"getBubbleTime");putFloat(d,"float1",h,"getDamage");used=true;}if(e instanceof Minecart){Object h=((CraftEntity)e).getHandle();putInt(d,"int1",h,"getHurtTime");putInt(d,"int2",h,"getHurtDir");putFloat(d,"float1",h,"getDamage");used=true;}if(e instanceof Arrow){Object h=((CraftEntity)e).getHandle();Boolean v=invokeBoolean(h,"isInGround");if(v!=null)d.putBoolean("flag1",v);used=true;}if(e instanceof LivingEntity)used|=captureParticles(e,d);return used?d:null;}
-    public static void apply(Entity e,CompoundTag d){if(e==null||d==null)return;try{if(e instanceof Ageable a&&d.contains("flag2")){if(d.getBooleanOr("flag2",false))a.setBaby();else a.setAdult();}if(e instanceof AbstractHorse h&&d.contains("byte1")){setHorseFlags(h,d.getByteOr("byte1",(byte)0));if(d.contains("variant")){int v=d.getIntOr("variant",0);if(h instanceof Horse horse){Horse.Variant[] vs=Horse.Variant.values();if(v>=0&&v<vs.length)horse.setVariant(vs[v]);}else if(h instanceof Llama llama){Llama.Color[] vs=Llama.Color.values();if(v>=0&&v<vs.length)llama.setColor(vs[v]);}}}if(e instanceof ChestedHorse h&&d.contains("flag1"))h.setCarryingChest(d.getBooleanOr("flag1",false));if(e instanceof Camel c&&d.contains("flag1"))invoke(((CraftEntity)c).getHandle(),"setDashing",d.getBooleanOr("flag1",false));if(e instanceof Boat){Object h=((CraftEntity)e).getHandle();invoke(h,"setPaddleState",d.getBooleanOr("flag1",false),d.getBooleanOr("flag2",false));setInt(h,"setHurtTime",d,"int1");setInt(h,"setHurtDir",d,"int2");setInt(h,"setBubbleTime",d,"int3");if(d.contains("float1"))invoke(h,"setDamage",d.getFloatOr("float1",0));}if(e instanceof Minecart){Object h=((CraftEntity)e).getHandle();setInt(h,"setHurtTime",d,"int1");setInt(h,"setHurtDir",d,"int2");if(d.contains("float1"))invoke(h,"setDamage",d.getFloatOr("float1",0));}if(e instanceof Arrow&&d.contains("flag1"))invoke(((CraftEntity)e).getHandle(),"setInGround",d.getBooleanOr("flag1",false));if(e instanceof LivingEntity)applyParticles(e,d);}catch(Exception ignored){}}
-    private static byte horseFlags(AbstractHorse h){try{Object handle=((CraftEntity)h).getHandle();Object data=invoke(handle,"getEntityData");Field f=field(handle.getClass(),"DATA_ID_FLAGS");if(f==null)f=field(net.minecraft.world.entity.animal.equine.AbstractHorse.class,"DATA_ID_FLAGS");if(data!=null&&f!=null){Object value=invoke(data,"get",f.get(null));if(value instanceof Number n)return n.byteValue();}}catch(Exception ignored){}byte flags=0;if(h.isTamed())flags|=2;if(!h.getInventory().getSaddle().getType().isAir())flags|=4;if(h.isEating())flags|=32;if(h.isRearing())flags|=64;return flags;}
-    private static void setHorseFlags(AbstractHorse h,byte flags){try{Object handle=((CraftEntity)h).getHandle();Object data=invoke(handle,"getEntityData");Field f=field(handle.getClass(),"DATA_ID_FLAGS");if(f==null)f=field(net.minecraft.world.entity.animal.equine.AbstractHorse.class,"DATA_ID_FLAGS");if(data!=null&&f!=null){invoke(data,"set",f.get(null),flags);return;}}catch(Exception ignored){}h.setTamed((flags&2)!=0);h.setEating((flags&32)!=0);h.setRearing((flags&64)!=0);}
-    private static boolean captureParticles(Entity e,CompoundTag d){try{Object h=((CraftEntity)e).getHandle(),data=invoke(h,"getEntityData");Field pf=field(h.getClass(),"DATA_EFFECT_PARTICLES"),af=field(h.getClass(),"DATA_EFFECT_AMBIENCE");if(pf==null)pf=field(net.minecraft.world.entity.LivingEntity.class,"DATA_EFFECT_PARTICLES");if(af==null)af=field(net.minecraft.world.entity.LivingEntity.class,"DATA_EFFECT_AMBIENCE");if(data==null||pf==null||af==null)return false;Object particles=invoke(data,"get",pf.get(null)),ambience=invoke(data,"get",af.get(null));ListTag list=new ListTag();if(particles instanceof List<?> ps)for(Object p:ps)try{var json=ParticleTypes.CODEC.encodeStart(JsonOps.INSTANCE,(ParticleOptions)p).result().orElse(null);if(json!=null)list.add(StringTag.valueOf(json.toString()));}catch(Exception ignored){}d.put("particles",list);if(ambience instanceof Boolean b)d.putBoolean("ambience",b);return true;}catch(Exception ignored){return false;}}
-    private static void applyParticles(Entity e,CompoundTag d){try{Object h=((CraftEntity)e).getHandle(),data=invoke(h,"getEntityData");Field pf=field(h.getClass(),"DATA_EFFECT_PARTICLES"),af=field(h.getClass(),"DATA_EFFECT_AMBIENCE");if(pf==null)pf=field(net.minecraft.world.entity.LivingEntity.class,"DATA_EFFECT_PARTICLES");if(af==null)af=field(net.minecraft.world.entity.LivingEntity.class,"DATA_EFFECT_AMBIENCE");if(data==null||pf==null||af==null)return;List<ParticleOptions> particles=new ArrayList<>();ListTag list=d.getList("particles").orElse(null);if(list!=null)for(int i=0;i<list.size();i++)try{String s=list.getString(i).orElse("");if(s.isBlank())continue;var decoded=ParticleTypes.CODEC.decode(JsonOps.INSTANCE,JsonParser.parseString(s)).result().orElse(null);if(decoded!=null)particles.add(decoded.getFirst());}catch(Exception ignored){}invoke(data,"set",pf.get(null),particles);if(d.contains("ambience"))invoke(data,"set",af.get(null),d.getBooleanOr("ambience",false));}catch(Exception ignored){}}
-    private static Field field(Class<?> type,String name){for(Class<?> c=type;c!=null;c=c.getSuperclass())try{Field f=c.getDeclaredField(name);f.setAccessible(true);return f;}catch(Exception ignored){}return null;}
-    private static void putInt(CompoundTag d,String key,Object h,String method){Integer v=intValue(h,method);if(v!=null)d.putInt(key,v);}
-    private static void putFloat(CompoundTag d,String key,Object h,String method){Double v=doubleValue(h,method);if(v!=null)d.putFloat(key,v.floatValue());}
-    private static void setInt(Object h,String method,CompoundTag d,String key){if(d.contains(key))invoke(h,method,d.getIntOr(key,0));}
-    private static Boolean invokeBoolean(Object h,String method,Object...a){Object v=invoke(h,method,a);return v instanceof Boolean b?b:null;}
-    private static Integer intValue(Object h,String method,Object...a){Object v=invoke(h,method,a);return v instanceof Number n?n.intValue():null;}
-    private static Double doubleValue(Object h,String method,Object...a){Object v=invoke(h,method,a);return v instanceof Number n?n.doubleValue():null;}
-    private static Object invoke(Object h,String name,Object...a){if(h==null)return null;for(Method m:h.getClass().getMethods())if(m.getName().equals(name)&&m.getParameterCount()==a.length)try{return m.invoke(h,a);}catch(Exception ignored){}return null;}
+    public static final String KEY = "mocap_non_player_entity_data";
+    private static final String LEGACY_PREFIX = "MOCAP_NP:";
+
+    private NonPlayerEntityData() {}
+
+    public static String attach(Entity entity, String nbt) {
+        CompoundTag data = capture(entity, nbt);
+        if (data == null) return nbt;
+        try {
+            CompoundTag base = nbt == null ? new CompoundTag() : TagParser.parseCompoundFully(nbt);
+            base.put(KEY, data);
+            return base.toString();
+        } catch (Exception ignored) {
+            return LEGACY_PREFIX + data;
+        }
+    }
+
+    public static boolean isOnly(String nbt) {
+        return nbt != null && nbt.startsWith(LEGACY_PREFIX);
+    }
+
+    public static CompoundTag extract(String nbt) {
+        if (nbt == null || nbt.isBlank()) return null;
+        try {
+            if (isOnly(nbt)) return TagParser.parseCompoundFully(nbt.substring(LEGACY_PREFIX.length()));
+            return TagParser.parseCompoundFully(nbt).getCompound(KEY).orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    public static String strip(String nbt) {
+        if (nbt == null || nbt.isBlank() || isOnly(nbt)) return null;
+        try {
+            CompoundTag base = TagParser.parseCompoundFully(nbt);
+            base.remove(KEY);
+            return base.toString();
+        } catch (Exception ignored) {
+            return nbt;
+        }
+    }
+
+    private static CompoundTag capture(Entity entity, String nbt) {
+        CompoundTag data = new CompoundTag();
+        boolean used = false;
+
+        // Upstream: AgeableMob - is baby.
+        if (entity instanceof Ageable ageable) {
+            data.putBoolean("flag2", ageable.getAge() < 0);
+            used = true;
+        }
+
+        // Upstream: AbstractHorse carries the complete NMS data byte. This is deliberately
+        // read from entity data instead of reconstructing only the known Bukkit flags.
+        if (entity instanceof AbstractHorse horse) {
+            data.putByte("byte1", horseFlags(horse));
+            used = true;
+
+            // Upstream stores Horse/Llama variant as int1. Prefer the live NMS value and
+            // retain NBT as a compatibility fallback for servers where the accessor differs.
+            Integer variant = null;
+            if (entity instanceof Horse) {
+                variant = invokeInteger(((CraftEntity) entity).getHandle(), "getTypeVariant");
+            }
+            if (entity instanceof Llama) {
+                variant = llamaVariant(((CraftEntity) entity).getHandle());
+            }
+            if (variant == null) variant = readVariantFromNbt(nbt);
+            if (variant != null) data.putInt("int1", variant);
+        }
+
+        // Camel is not an AbstractHorse in current Minecraft's class hierarchy, but upstream
+        // records its dashing state in flag1.
+        if (entity instanceof Camel camel) {
+            Boolean dashing = invokeBoolean(((CraftEntity) camel).getHandle(), "isDashing");
+            if (dashing != null) data.putBoolean("flag1", dashing);
+            used = true;
+        }
+
+        // Upstream: AbstractChestedHorse - has chest.
+        if (entity instanceof ChestedHorse chestedHorse) {
+            data.putBoolean("flag1", chestedHorse.isCarryingChest());
+            used = true;
+        }
+
+        // Upstream: Boat - paddle states, hurt time/direction, bubble timer, damage.
+        if (entity instanceof Boat boat) {
+            Object handle = ((CraftEntity) boat).getHandle();
+            Boolean left = invokeBoolean(handle, "getPaddleState", 0);
+            Boolean right = invokeBoolean(handle, "getPaddleState", 1);
+            if (left != null) data.putBoolean("flag1", left);
+            if (right != null) data.putBoolean("flag2", right);
+            putInt(data, "int1", handle, "getHurtTime");
+            putInt(data, "int2", handle, "getHurtDir");
+            putInt(data, "int3", handle, "getBubbleTime");
+            putFloat(data, "float1", handle, "getDamage");
+            used = true;
+        }
+
+        // Important: the target upstream v1.4-alpha-10 implementation does NOT use
+        // rollingAmplitude/rollingDirection here. It records AbstractMinecart's
+        // hurt time, hurt direction and damage under int1/int2/float1.
+        if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
+            putInt(data, "int1", minecart, "getHurtTime");
+            putInt(data, "int2", minecart, "getHurtDir");
+            putFloat(data, "float1", minecart, "getDamage");
+            used = true;
+        }
+
+        // Upstream AbstractArrow (including trident) - is in ground.
+        if (entity instanceof Arrow arrow) {
+            Boolean inGround = invokeBoolean(((CraftEntity) arrow).getHandle(), "isInGround");
+            if (inGround != null) data.putBoolean("flag1", inGround);
+            used = true;
+        }
+
+        if (entity instanceof LivingEntity) used |= captureParticles(entity, data);
+        return used ? data : null;
+    }
+
+    private static Integer readVariantFromNbt(String nbt) {
+        try {
+            if (nbt == null || nbt.isBlank()) return null;
+            CompoundTag base = TagParser.parseCompoundFully(nbt);
+            return base.contains("Variant") ? base.getIntOr("Variant", 0) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static Integer llamaVariant(Object handle) {
+        Object variant = invoke(handle, "getVariant");
+        if (variant == null) return null;
+        Integer id = invokeInteger(variant, "getId");
+        if (id != null) return id;
+        return invokeInteger(variant, "getId", handle);
+    }
+
+    public static void apply(Entity entity, CompoundTag data) {
+        if (entity == null || data == null) return;
+        try {
+            // Upstream prevents the normal growth tick from resetting the synced baby flag.
+            if (entity instanceof Ageable ageable && data.contains("flag2")) {
+                if (ageable.getAge() < 0) ageable.setAdult();
+                setAgeableBaby(entity, data.getBooleanOr("flag2", false));
+            }
+
+            if (entity instanceof AbstractHorse horse) {
+                if (!data.contains("byte1")) return;
+                byte flags = data.getByteOr("byte1", (byte) 0);
+                setHorseFlags(horse, flags);
+
+                // The saddle bit is part of ABSTRACT_HORSE_FLAGS in upstream and is also
+                // mirrored into the horse inventory so the server state remains coherent.
+                setHorseSaddle(horse, (flags & 0x04) != 0);
+
+                if (data.contains("int1")) {
+                    int variant = data.getIntOr("int1", 0);
+                    if (horse instanceof Horse) {
+                        invoke(((CraftEntity) horse).getHandle(), "setTypeVariant", variant);
+                    } else if (horse instanceof Llama) {
+                        setLlamaVariant(((CraftEntity) horse).getHandle(), variant);
+                    }
+                }
+
+                if (horse instanceof ChestedHorse chestedHorse && data.contains("flag1")) {
+                    chestedHorse.setCarryingChest(data.getBooleanOr("flag1", false));
+                }
+            }
+
+            if (entity instanceof Camel camel && data.contains("flag1")) {
+                invoke(((CraftEntity) camel).getHandle(), "setDashing", data.getBooleanOr("flag1", false));
+            }
+
+            if (entity instanceof Boat boat) {
+                Object handle = ((CraftEntity) boat).getHandle();
+                invoke(handle, "setPaddleState", data.getBooleanOr("flag1", false), data.getBooleanOr("flag2", false));
+                setInt(handle, "setHurtTime", data, "int1");
+                setInt(handle, "setHurtDir", data, "int2");
+                setInt(handle, "setBubbleTime", data, "int3");
+                if (data.contains("float1")) invoke(handle, "setDamage", data.getFloatOr("float1", 0));
+            }
+
+            if (entity instanceof net.minecraft.world.entity.vehicle.AbstractMinecart minecart) {
+                setInt(minecart, "setHurtTime", data, "int1");
+                setInt(minecart, "setHurtDir", data, "int2");
+                if (data.contains("float1")) invoke(minecart, "setDamage", data.getFloatOr("float1", 0));
+            }
+
+            if (entity instanceof Arrow arrow && data.contains("flag1")) {
+                invoke(((CraftEntity) arrow).getHandle(), "setInGround", data.getBooleanOr("flag1", false));
+            }
+
+            if (entity instanceof LivingEntity) applyParticles(entity, data);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void setAgeableBaby(Entity entity, boolean baby) {
+        Object handle = ((CraftEntity) entity).getHandle();
+        if (baby) {
+            // setAge(-1) preserves the actual AgeableMob state; this mirrors the upstream
+            // IS_BABY data accessor more closely than only changing the Bukkit age value.
+            invoke(handle, "setAge", -1);
+        } else {
+            invoke(handle, "setAge", 0);
+        }
+    }
+
+    private static byte horseFlags(AbstractHorse horse) {
+        try {
+            Object handle = ((CraftEntity) horse).getHandle();
+            Object data = invoke(handle, "getEntityData");
+            Field field = field(handle.getClass(), "DATA_ID_FLAGS");
+            if (field == null) field = field(net.minecraft.world.entity.animal.equine.AbstractHorse.class, "DATA_ID_FLAGS");
+            if (data != null && field != null) {
+                Object value = invoke(data, "get", field.get(null));
+                if (value instanceof Number number) return number.byteValue();
+            }
+        } catch (Exception ignored) {
+        }
+
+        // Compatibility fallback only. The NMS data accessor above is the authoritative path.
+        byte flags = 0;
+        if (horse.isTamed()) flags |= 2;
+        if (!horse.getInventory().getSaddle().getType().isAir()) flags |= 4;
+        if (horse.isEating()) flags |= 32;
+        if (horse.isRearing()) flags |= 64;
+        return flags;
+    }
+
+    private static void setHorseFlags(AbstractHorse horse, byte flags) {
+        try {
+            Object handle = ((CraftEntity) horse).getHandle();
+            Object data = invoke(handle, "getEntityData");
+            Field field = field(handle.getClass(), "DATA_ID_FLAGS");
+            if (field == null) field = field(net.minecraft.world.entity.animal.equine.AbstractHorse.class, "DATA_ID_FLAGS");
+            if (data != null && field != null) {
+                invoke(data, "set", field.get(null), flags);
+                return;
+            }
+        } catch (Exception ignored) {
+        }
+
+        horse.setTamed((flags & 2) != 0);
+        horse.setEating((flags & 32) != 0);
+        horse.setRearing((flags & 64) != 0);
+    }
+
+    private static void setHorseSaddle(AbstractHorse horse, boolean saddled) {
+        try {
+            Object handle = ((CraftEntity) horse).getHandle();
+            Object inventory = invoke(handle, "getInventory");
+            if (inventory != null) {
+                invoke(inventory, "setItem", 0, saddled ? new ItemStack(Items.SADDLE) : ItemStack.EMPTY);
+                return;
+            }
+        } catch (Exception ignored) {
+        }
+        // Bukkit fallback for Paper mappings where the NMS inventory accessor is unavailable.
+        try {
+            horse.getInventory().setSaddle(saddled ? org.bukkit.Material.SADDLE.createItemStack() : null);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void setLlamaVariant(Object handle, int id) {
+        try {
+            Object variantClass = Class.forName("net.minecraft.world.entity.animal.horse.Llama$Variant");
+            Method byId = ((Class<?>) variantClass).getDeclaredMethod("byId", int.class);
+            byId.setAccessible(true);
+            Object variant = byId.invoke(null, id);
+            invoke(handle, "setVariant", variant);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static boolean captureParticles(Entity entity, CompoundTag data) {
+        try {
+            Object handle = ((CraftEntity) entity).getHandle();
+            Object entityData = invoke(handle, "getEntityData");
+            Field particleField = field(handle.getClass(), "DATA_EFFECT_PARTICLES");
+            Field ambienceField = field(handle.getClass(), "DATA_EFFECT_AMBIENCE");
+            if (particleField == null) particleField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_PARTICLES");
+            if (ambienceField == null) ambienceField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_AMBIENCE");
+            if (entityData == null || particleField == null || ambienceField == null) return false;
+
+            Object particles = invoke(entityData, "get", particleField.get(null));
+            Object ambience = invoke(entityData, "get", ambienceField.get(null));
+            ListTag list = new ListTag();
+            if (particles instanceof List<?> particleList) {
+                for (Object particle : particleList) {
+                    try {
+                        var json = ParticleTypes.CODEC.encodeStart(JsonOps.INSTANCE, (ParticleOptions) particle).result().orElse(null);
+                        if (json != null) list.add(StringTag.valueOf(json.toString()));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            data.put("particles", list);
+            if (ambience instanceof Boolean value) data.putBoolean("ambience", value);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static void applyParticles(Entity entity, CompoundTag data) {
+        try {
+            Object handle = ((CraftEntity) entity).getHandle();
+            Object entityData = invoke(handle, "getEntityData");
+            Field particleField = field(handle.getClass(), "DATA_EFFECT_PARTICLES");
+            Field ambienceField = field(handle.getClass(), "DATA_EFFECT_AMBIENCE");
+            if (particleField == null) particleField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_PARTICLES");
+            if (ambienceField == null) ambienceField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_AMBIENCE");
+            if (entityData == null || particleField == null || ambienceField == null) return;
+
+            List<ParticleOptions> particles = new ArrayList<>();
+            ListTag list = data.getList("particles").orElse(null);
+            if (list != null) {
+                for (int i = 0; i < list.size(); i++) {
+                    try {
+                        String value = list.getString(i).orElse("");
+                        if (value.isBlank()) continue;
+                        var decoded = ParticleTypes.CODEC.decode(JsonOps.INSTANCE, JsonParser.parseString(value)).result().orElse(null);
+                        if (decoded != null) particles.add(decoded.getFirst());
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            invoke(entityData, "set", particleField.get(null), particles);
+            if (data.contains("ambience")) invoke(entityData, "set", ambienceField.get(null), data.getBooleanOr("ambience", false));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static Field field(Class<?> type, String name) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            try {
+                Field value = current.getDeclaredField(name);
+                value.setAccessible(true);
+                return value;
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static void putInt(CompoundTag data, String key, Object handle, String method) {
+        Integer value = invokeInteger(handle, method);
+        if (value != null) data.putInt(key, value);
+    }
+
+    private static void putFloat(CompoundTag data, String key, Object handle, String method) {
+        Double value = invokeDouble(handle, method);
+        if (value != null) data.putFloat(key, value.floatValue());
+    }
+
+    private static void setInt(Object handle, String method, CompoundTag data, String key) {
+        if (data.contains(key)) invoke(handle, method, data.getIntOr(key, 0));
+    }
+
+    private static Boolean invokeBoolean(Object handle, String method, Object... args) {
+        Object value = invoke(handle, method, args);
+        return value instanceof Boolean bool ? bool : null;
+    }
+
+    private static Integer invokeInteger(Object handle, String method, Object... args) {
+        Object value = invoke(handle, method, args);
+        return value instanceof Number number ? number.intValue() : null;
+    }
+
+    private static Double invokeDouble(Object handle, String method, Object... args) {
+        Object value = invoke(handle, method, args);
+        return value instanceof Number number ? number.doubleValue() : null;
+    }
+
+    /** Reflection helper with parameter-compatible matching rather than name + arity only. */
+    private static Object invoke(Object handle, String name, Object... args) {
+        if (handle == null) return null;
+        for (Class<?> type = handle.getClass(); type != null; type = type.getSuperclass()) {
+            for (Method method : type.getDeclaredMethods()) {
+                if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
+                Class<?>[] parameterTypes = method.getParameterTypes();
+                boolean compatible = true;
+                for (int i = 0; i < args.length; i++) {
+                    if (!compatible(parameterTypes[i], args[i])) {
+                        compatible = false;
+                        break;
+                    }
+                }
+                if (!compatible) continue;
+                try {
+                    method.setAccessible(true);
+                    return method.invoke(handle, args);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean compatible(Class<?> parameterType, Object value) {
+        if (value == null) return !parameterType.isPrimitive();
+        Class<?> valueType = value.getClass();
+        if (!parameterType.isPrimitive()) return parameterType.isAssignableFrom(valueType);
+        if (parameterType == boolean.class) return valueType == Boolean.class;
+        if (parameterType == byte.class) return valueType == Byte.class;
+        if (parameterType == short.class) return valueType == Short.class || valueType == Byte.class;
+        if (parameterType == int.class) return valueType == Integer.class || valueType == Short.class || valueType == Byte.class;
+        if (parameterType == long.class) return Number.class.isAssignableFrom(valueType);
+        if (parameterType == float.class) return Number.class.isAssignableFrom(valueType);
+        if (parameterType == double.class) return Number.class.isAssignableFrom(valueType);
+        if (parameterType == char.class) return valueType == Character.class;
+        return false;
+    }
 }

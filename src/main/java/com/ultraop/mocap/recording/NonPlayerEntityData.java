@@ -131,15 +131,17 @@ public final class NonPlayerEntityData {
         // rollingAmplitude/rollingDirection here. It records AbstractMinecart's
         // hurt time, hurt direction and damage under int1/int2/float1.
         if (entity instanceof org.bukkit.entity.Minecart minecart) {
-            putInt(data, "int1", minecart, "getHurtTime");
-            putInt(data, "int2", minecart, "getHurtDir");
-            putFloat(data, "float1", minecart, "getDamage");
+            Object handle = ((CraftEntity) minecart).getHandle();
+            putInt(data, "int1", handle, "getHurtTime");
+            putInt(data, "int2", handle, "getHurtDir");
+            putFloat(data, "float1", handle, "getDamage");
             used = true;
         }
 
         // Upstream AbstractArrow (including trident) - is in ground.
-        if (entity instanceof Arrow arrow) {
-            Boolean inGround = invokeBoolean(((CraftEntity) arrow).getHandle(), "isInGround");
+        Object arrowHandle = ((CraftEntity) entity).getHandle();
+        if (isNmsType(arrowHandle, "net.minecraft.world.entity.projectile.AbstractArrow")) {
+            Boolean inGround = invokeBoolean(arrowHandle, "isInGround");
             if (inGround != null) data.putBoolean("flag1", inGround);
             used = true;
         }
@@ -212,13 +214,15 @@ public final class NonPlayerEntityData {
             }
 
             if (entity instanceof org.bukkit.entity.Minecart minecart) {
-                setInt(minecart, "setHurtTime", data, "int1");
-                setInt(minecart, "setHurtDir", data, "int2");
-                if (data.contains("float1")) invoke(minecart, "setDamage", data.getFloatOr("float1", 0));
+                Object handle = ((CraftEntity) minecart).getHandle();
+                setInt(handle, "setHurtTime", data, "int1");
+                setInt(handle, "setHurtDir", data, "int2");
+                if (data.contains("float1")) invoke(handle, "setDamage", data.getFloatOr("float1", 0));
             }
 
-            if (entity instanceof Arrow arrow && data.contains("flag1")) {
-                invoke(((CraftEntity) arrow).getHandle(), "setInGround", data.getBooleanOr("flag1", false));
+            Object arrowHandle = ((CraftEntity) entity).getHandle();
+            if (data.contains("flag1") && isNmsType(arrowHandle, "net.minecraft.world.entity.projectile.AbstractArrow")) {
+                invoke(arrowHandle, "setInGround", data.getBooleanOr("flag1", false));
             }
 
             if (entity instanceof LivingEntity) applyParticles(entity, data);
@@ -297,7 +301,7 @@ public final class NonPlayerEntityData {
 
     private static void setLlamaVariant(Object handle, int id) {
         try {
-            Object variantClass = Class.forName("net.minecraft.world.entity.animal.horse.Llama$Variant");
+            Object variantClass = Class.forName("net.minecraft.world.entity.animal.equine.Llama$Variant");
             Method byId = ((Class<?>) variantClass).getDeclaredMethod("byId", int.class);
             byId.setAccessible(true);
             Object variant = byId.invoke(null, id);
@@ -363,6 +367,14 @@ public final class NonPlayerEntityData {
             if (data.contains("ambience")) invoke(entityData, "set", ambienceField.get(null), data.getBooleanOr("ambience", false));
         } catch (Exception ignored) {
         }
+    }
+
+    private static boolean isNmsType(Object handle, String className) {
+        if (handle == null) return false;
+        for (Class<?> current = handle.getClass(); current != null; current = current.getSuperclass()) {
+            if (current.getName().equals(className)) return true;
+        }
+        return false;
     }
 
     private static Field field(Class<?> type, String name) {

@@ -322,18 +322,23 @@ public final class NonPlayerEntityData {
 
             Object particles = invoke(entityData, "get", particleField.get(null));
             Object ambience = invoke(entityData, "get", ambienceField.get(null));
-            ListTag list = new ListTag();
+            java.util.TreeSet<String> particleJsonSet = new java.util.TreeSet<>();
             if (particles instanceof List<?> particleList) {
                 for (Object particle : particleList) {
                     try {
                         var json = ParticleTypes.CODEC.encodeStart(JsonOps.INSTANCE, (ParticleOptions) particle).result().orElse(null);
-                        if (json != null) list.add(StringTag.valueOf(json.toString()));
+                        if (json != null) particleJsonSet.add(json.toString());
                     } catch (Exception ignored) {
                     }
                 }
             }
+            boolean ambient = ambience instanceof Boolean value && value;
+            if (particleJsonSet.isEmpty() && !ambient) return false;
+
+            ListTag list = new ListTag();
+            for (String json : particleJsonSet) list.add(StringTag.valueOf(json));
             data.put("particles", list);
-            if (ambience instanceof Boolean value) data.putBoolean("ambience", value);
+            data.putBoolean("ambience", ambient);
             return true;
         } catch (Exception ignored) {
             return false;

@@ -20,54 +20,7 @@ jobs:
       - name: Apply temporary particle parity patch
         if: github.event_name == 'push' && github.actor == 'Ahsan3944'
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path('src/main/java/com/ultraop/mocap/recording/NonPlayerEntityData.java')
-          s = p.read_text()
-          pattern = r'    private static boolean captureParticles\(Entity entity, CompoundTag data\) \{.*?\n    \}\n\n    private static void applyParticles'
-          replacement = '''    private static boolean captureParticles(Entity entity, CompoundTag data) {
-          try {
-              Object handle = ((CraftEntity) entity).getHandle();
-              Object entityData = invoke(handle, "getEntityData");
-              Field particleField = field(handle.getClass(), "DATA_EFFECT_PARTICLES");
-              Field ambienceField = field(handle.getClass(), "DATA_EFFECT_AMBIENCE");
-              if (particleField == null) particleField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_PARTICLES");
-              if (ambienceField == null) ambienceField = field(net.minecraft.world.entity.LivingEntity.class, "DATA_EFFECT_AMBIENCE");
-              if (entityData == null || particleField == null || ambienceField == null) return false;
-
-              Object particles = invoke(entityData, "get", particleField.get(null));
-              Object ambience = invoke(entityData, "get", ambienceField.get(null));
-              java.util.TreeSet<String> particleJsonSet = new java.util.TreeSet<>();
-              if (particles instanceof List<?> particleList) {
-                  for (Object particle : particleList) {
-                      try {
-                          var json = ParticleTypes.CODEC.encodeStart(JsonOps.INSTANCE, (ParticleOptions) particle).result().orElse(null);
-                          if (json != null) particleJsonSet.add(json.toString());
-                      } catch (Exception ignored) {
-                      }
-                  }
-              }
-              boolean ambient = ambience instanceof Boolean value && value;
-              if (particleJsonSet.isEmpty() && !ambient) return false;
-
-              ListTag list = new ListTag();
-              for (String json : particleJsonSet) list.add(StringTag.valueOf(json));
-              data.put("particles", list);
-              data.putBoolean("ambience", ambient);
-              return true;
-          } catch (Exception ignored) {
-              return false;
-          }
-      }
-
-      private static void applyParticles'''
-          ns, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
-          if n != 1:
-              raise SystemExit('captureParticles block not found')
-          p.write_text(ns)
-          PY
-
+          python3 -c "import base64; exec(base64.b64decode('ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnAgPSBQYXRoKCJzcmMvbWFpbi9qYXZhL2NvbS91bHRyYW9wL21vY2FwL3JlY29yZGluZy9Ob25QbGF5ZXJFbnRpdHlEYXRhLmphdmEiKQpzID0gcC5yZWFkX3RleHQoKQpzdGFydCA9IHMuaW5kZXgoIiAgICBwcml2YXRlIHN0YXRpYyBib29sZWFuIGNhcHR1cmVQYXJ0aWNsZXMiKQplbmQgPSBzLmluZGV4KCIgICAgcHJpdmF0ZSBzdGF0aWMgdm9pZCBhcHBseVBhcnRpY2xlcyIsIHN0YXJ0KQpyZXBsYWNlbWVudCA9ICcgICAgcHJpdmF0ZSBzdGF0aWMgYm9vbGVhbiBjYXB0dXJlUGFydGljbGVzKEVudGl0eSBlbnRpdHksIENvbXBvdW5kVGFnIGRhdGEpIHtcbiAgICAgICAgdHJ5IHtcbiAgICAgICAgICAgIE9iamVjdCBoYW5kbGUgPSAoKENyYWZ0RW50aXR5KSBlbnRpdHkpLmdldEhhbmRsZSgpO1xuICAgICAgICAgICAgT2JqZWN0IGVudGl0eURhdGEgPSBpbnZva2UoaGFuZGxlLCAiZ2V0RW50aXR5RGF0YSIpO1xuICAgICAgICAgICAgRmllbGQgcGFydGljbGVGaWVsZCA9IGZpZWxkKGhhbmRsZS5nZXRDbGFzcygpLCAiREFUQV9FRkZFQ1RfUEFSVElDTEVTIik7CiAgICAgICAgICAgIEZpZWxkIGFtYmllbmNlRmllbGQgPSBmaWVsZChoYW5kbGUuZ2V0Q2xhc3MoKSwgIkRBVEFfRUZGRUNUX0FNQklFTkNFIik7CiAgICAgICAgICAgIGlmIChwYXJ0aWNsZUZpZWxkID09IG51bGwpIHBhcnRpY2xlRmllbGQgPSBmaWVsZChuZXQubWluZWNyYWZ0LndvcmxkLmVudGl0eS5MaXZpbmdFbnRpdHkuY2xhc3MsICJEQVRBX0VGRkVDVF9QQVJUSUNMRVMiKTsKICAgICAgICAgICAgaWYgKGFtYmllbmNlRmllbGQgPT0gbnVsbCkgYW1iaWVuY2VGaWVsZCA9IGZpZWxkKG5ldC5taW5lY3JhZnQud29ybGQuZW50aXR5LkxpdmluZ0VudGl0eS5jbGFzcywgIkRBVEFfRUZGRUNUX0FNQklFTkNFIik7CiAgICAgICAgICAgIGlmIChlbnRpdHlEYXRhID09IG51bGwgfHwgcGFydGljbGVGaWVsZCA9PSBudWxsIHx8IGFtYmllbmNlRmllbGQgPT0gbnVsbCkgcmV0dXJuIGZhbHNlO1xuXG4gICAgICAgICAgICBPYmplY3QgcGFydGljbGVzID0gaW52b2tlKGVudGl0eURhdGEsICJnZXQiLCBwYXJ0aWNsZUZpZWxkLmdldChudWxsKSk7XG4gICAgICAgICAgICBPYmplY3QgYW1iaWVuY2UgPSBpbnZva2UoZW50aXR5RGF0YSwgImdldCIsIGFtYmllbmNlRmllbGQuZ2V0KG51bGwpKTtcbiAgICAgICAgICAgIGphdmEudXRpbC5UcmVlU2V0PFN0cmluZz4gcGFydGljbGVKc29uU2V0ID0gbmV3IGphdmEudXRpbC5UcmVlU2V0PCgpO1xuICAgICAgICAgICAgaWYgKHBhcnRpY2xlcyBpbnN0YW5jZW9mIExpc3Q8Pz4gcGFydGljbGVMaXN0KSB7XG4gICAgICAgICAgICAgICAgZm9yIChPYmplY3QgcGFydGljbGUgOiBwYXJ0aWNsZUxpc3QpIHtcbiAgICAgICAgICAgICAgICAgICAgdHJ5IHtcbiAgICAgICAgICAgICAgICAgICAgICAgIHZhciBqc29uID0gUGFydGljbGVUeXBlcy5DT0RFQy5lbmNvZGVTdGFydChKc29uT3BzLklOU1RBTkNFLCB2YXIpO1xuICAgICAgICAgICAgICAgICAgICAgICAgaWYgKGpzb24gIT0gbnVsbCkgcGFydGljbGVKc29uU2V0LmFkZChqc29uLnRvU3RyaW5nKCkpO1xuICAgICAgICAgICAgICAgICAgICB9IGNhdGNoIChFeGNlcHRpb24gaWdub3JlZCkge31cbiAgICAgICAgICAgICAgICB9XG4gICAgICAgICAgICB9XG4gICAgICAgICAgICBib29sZWFuIGFtYmllbnQgPSBhbWJpZW5jZSBpbnN0YW5jZW9mIEJvb2xlYW4gdmFsdWUgJiYgdmFsdWU7XG4gICAgICAgICAgICBpZiAocGFydGljbGVKc29uU2V0LmlzRW1wdHkoKSAmJiAhYW1iaWVudCkgcmV0dXJuIGZhbHNlO1xuXG4gICAgICAgICAgICBMaXN0VGFnIGxpc3QgPSBuZXcgTGlzdFRhZygpO1xuICAgICAgICAgICAgZm9yIChTdHJpbmcganNvbiA6IHBhcnRpY2xlSnNvblNldCkgbGlzdC5hZGQoU3RyaW5nVGFnLnZhbHVlT2YoanNvbikpO1xuICAgICAgICAgICAgZGF0YS5wdXQoInBhcnRpY2xlcyIsIGxpc3QpO1xuICAgICAgICAgICAgZGF0YS5wdXRCb29sZWFuKCJhbWJpZW5jZSIsIGFtYmllbnQpO1xuICAgICAgICAgICAgcmV0dXJuIHRydWU7XG4gICAgICAgIH0gY2F0Y2ggKEV4Y2VwdGlvbiBpbm5lcmF1c2VkKSB7XG4gICAgICAgICAgICByZXR1cm4gZmFsc2U7XG4gICAgICAgIH1cbiAgICB9XG5cbi')" 
           rm -f .github/workflows/_particleparity.yml .particle-parity-trigger
 
       - name: Set up Java 21
@@ -84,12 +37,11 @@ jobs:
       - name: Build
         run: gradle build --no-daemon
 
-      - name: Commit parity patch and restore workflow
+      - name: Commit parity patch and cleanup
         if: github.event_name == 'push' && github.actor == 'Ahsan3944'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -- .github/workflows/build.yml
-          git add src/main/java/com/ultraop/mocap/recording/NonPlayerEntityData.java .github/workflows/build.yml .github/workflows/_particleparity.yml .particle-parity-trigger
+          git add src/main/java/com/ultraop/mocap/recording/NonPlayerEntityData.java .github/workflows/_particleparity.yml .particle-parity-trigger
           git commit -m "Align effect particle state parity" || exit 0
           git push

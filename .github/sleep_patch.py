@@ -16,8 +16,8 @@ Path(p).write_text(s)
 p='src/main/java/com/ultraop/mocap/recording/EntityStateFrame.java'
 s=Path(p).read_text()
 s=s.replace('String nbt, int arrowCount, int stingerCount)', 'String nbt, int arrowCount, int stingerCount, boolean sleeping, int sleepX, int sleepY, int sleepZ)', 1)
-s=s.replace('vehicleId,false,null,0,0);}', 'vehicleId,false,null,0,0,false,0,0,0);}', 1)
-s=s.replace('vehicleId,hurt,null,0,0);}', 'vehicleId,hurt,null,0,0,false,0,0,0);}', 1)
+s=s.replace('vehicleId,false,null,0,0);}', 'vehicleId,false,null,0,0,false,0,0,0);}')
+s=s.replace('vehicleId,hurt,null,0,0);}', 'vehicleId,hurt,null,0,0,false,0,0,0);}')
 old='Location location=entity.getLocation(); LivingEntity living=entity instanceof LivingEntity value?value:null; EntityEquipment equipment='
 new='Location location=entity.getLocation(); LivingEntity living=entity instanceof LivingEntity value?value:null; net.minecraft.core.BlockPos bed=living==null?null:((net.minecraft.world.entity.LivingEntity)((org.bukkit.craftbukkit.entity.CraftEntity)entity).getHandle()).getSleepingPos().orElse(null); EntityEquipment equipment='
 if old not in s: raise SystemExit('entity capture needle missing')
